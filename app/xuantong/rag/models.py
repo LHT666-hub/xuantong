@@ -10,8 +10,11 @@ class RetrievalResult(BaseModel):
 
     content: str = Field(description="文档正文")
     source: str = Field(default="", description="来源（文件名/章节等）")
-    score: float = Field(default=0.0, description="相关性得分 0.0-1.0")
+    score: float = Field(default=0.0, description="融合相关性得分 0.0-1.0（RRF 归一化）")
     metadata: dict = Field(default_factory=dict, description="附加元数据")
+    bm25_score: float = Field(default=0.0, description="BM25 检索分数")
+    vector_score: float = Field(default=0.0, description="向量检索分数")
+    rerank_score: float = Field(default=0.0, description="重排分数")
 
 
 class GradeResult(BaseModel):

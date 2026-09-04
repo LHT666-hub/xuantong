@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     rag_relevance_threshold: float = 0.5
     rag_data_dir: str = "app/xuantong/rag/data"
 
+    # RAG 混合检索配置
+    rag_reranker_model: str = "BAAI/bge-reranker-v2-m3"
+    rag_bm25_enabled: bool = True
+    rag_vector_enabled: bool = False  # 需要 embedding 模型
+    rag_rrf_k: int = 60
+    rag_use_reranker: bool = True
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     def get_model_for_tier(self, tier: str) -> str:

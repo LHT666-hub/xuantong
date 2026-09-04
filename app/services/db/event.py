@@ -32,7 +32,7 @@ class DbEventService:
         event_id = event_data.get("id") or str(uuid4())
 
         # 规范化 patient_id 为确定性 UUID
-        patient_id = normalize_patient_id(event_data.get("patient_id", ""))
+        patient_id = UUID(normalize_patient_id(event_data.get("patient_id", "")))
 
         event = Event(
             id=UUID(event_id) if isinstance(event_id, str) else event_id,

@@ -1,38 +1,57 @@
-"""RAG 检索器 — 封装知识库检索与混合检索策略。"""
+"""RAG 检索器 — 封装知识库检索、混合检索与重排策略。
+
+集成安全过滤（PHI 脱敏 + 注入检测）、受众分层过滤与可选重排。
+"""
 
 from __future__ import annotations
 
 import logging
 from typing import Any
 
+from app.xuantong.rag.audience_filter import AudienceFilter
+from app.xuantong.rag.base import BaseReranker
 from app.xuantong.rag.knowledge_base import KnowledgeBase
 from app.xuantong.rag.models import RetrievalResult
+from app.xuantong.rag.reranker import RuleBasedReranker
+from app.xuantong.rag.safety_filter import RAGSafetyFilter
 
 logger = logging.getLogger(__name__)
 
 
 class RAGRetriever:
-    """RAG 检索器 — 支持多种检索策略。
+    """RAG 检索器 — 支持混合检索 + 可选重排。
 
-    当前阶段：基于 KnowledgeBase 的关键词检索。
-    后续阶段：接入 pgvector 做向量检索，实现真正的混合检索。
+    流程：检索 → 重排（可选） → 受众过滤 → 安全过滤
     """
 
-    def __init__(self, knowledge_base: KnowledgeBase | None = None) -> None:
+    def __init__(
+        self,
+        knowledge_base: KnowledgeBase | None = None,
+        safety_filter: RAGSafetyFilter | None = None,
+        audience_filter: AudienceFilter | None = None,
+        reranker: BaseReranker | None = None,
+    ) -> None:
         self.kb = knowledge_base or KnowledgeBase()
+        self.safety_filter = safety_filter if safety_filter is not None else RAGSafetyFilter()
+        self.audience_filter = audience_filter if audience_filter is not None else AudienceFilter()
+        self.reranker = reranker if reranker is not None else RuleBasedReranker()
 
     async def retrieve(
         self,
         query: str,
         top_k: int = 5,
         filters: dict[str, Any] | None = None,
+        agent_role: str | None = None,
+        use_rerank: bool = True,
     ) -> list[RetrievalResult]:
-        """检索相关文档。
+        """检索相关文档（含可选重排）。
 
         Args:
             query: 查询文本。
             top_k: 返回条数。
-            filters: 过滤条件（预留，当前未使用）。
+            filters: 过滤条件（预留）。
+            agent_role: Agent 角色，用于受众过滤。
+            use_rerank: 是否启用重排（默认 True）。
 
         Returns:
             RetrievalResult 列表，按相关性降序。
@@ -40,11 +59,28 @@ class RAGRetriever:
         if not query.strip():
             return []
 
-        results = await self.kb.search(query, top_k=top_k)
+        # 1. 粗排检索（多取一些用于重排）
+        fetch_k = top_k * 3
+        results = await self.kb.hybrid_search(query, top_k=fetch_k)
 
-        # 应用过滤（预留接口）
+        # 2. 应用 metadata 过滤（预留接口）
         if filters:
             results = self._apply_filters(results, filters)
+
+        # 3. 重排（可选）
+        if use_rerank and results and self.reranker:
+            results = await self.reranker.rerank(query, results, top_k=fetch_k)
+
+        # 4. 受众过滤（可选）
+        if agent_role and self.audience_filter:
+            results = self.audience_filter.filter_by_role(results, agent_role)
+
+        # 截断到 top_k
+        results = results[:top_k]
+
+        # 5. 安全过滤
+        if self.safety_filter:
+            results = self._apply_safety_filter(results)
 
         logger.info("RAGRetriever: query=%r → %d 条结果", query[:60], len(results))
         return results
@@ -52,26 +88,29 @@ class RAGRetriever:
     async def hybrid_retrieve(
         self, query: str, top_k: int = 5
     ) -> list[RetrievalResult]:
-        """混合检索（关键词 + 向量）。
+        """混合检索（BM25 + 向量 + 重排）。
 
-        当前阶段向量部分未实现，退化为纯关键词检索。
-        后续接入 pgvector 后，合并两路结果并按 score 排序。
+        当前阶段使用 BM25 + RuleBasedReranker；
+        后续接入向量检索和 CrossEncoder 后自动升级。
         """
-        keyword_results = await self.retrieve(query, top_k=top_k)
-        # TODO: 向量检索部分（pgvector）
-        vector_results: list[RetrievalResult] = []
+        return await self.retrieve(query, top_k=top_k, use_rerank=True)
 
-        # 合并去重（以 content 前 100 字符为 key）
-        seen: set[str] = set()
-        merged: list[RetrievalResult] = []
-        for r in keyword_results + vector_results:
-            key = r.content[:100]
-            if key not in seen:
-                seen.add(key)
-                merged.append(r)
-
-        merged.sort(key=lambda x: x.score, reverse=True)
-        return merged[:top_k]
+    def _apply_safety_filter(
+        self, results: list[RetrievalResult]
+    ) -> list[RetrievalResult]:
+        """对检索结果执行安全过滤。"""
+        safe: list[RetrievalResult] = []
+        for doc in results:
+            fr = self.safety_filter.filter_content(doc.content)
+            if fr.passed:
+                safe.append(doc)
+            elif fr.sanitized_content:
+                # 脱敏后保留
+                doc.content = fr.sanitized_content
+                doc.metadata["sanitized"] = True
+                safe.append(doc)
+            # else: 注入攻击 → 丢弃
+        return safe
 
     @staticmethod
     def _apply_filters(
