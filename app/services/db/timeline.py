@@ -1,0 +1,210 @@
+"""患者时间线持久化服务（数据库实现）。"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any
+from uuid import UUID, uuid4
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.timeline import TimelineEntry
+from app.utils import normalize_patient_id
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+class DbTimelineService:
+    """基于数据库的时间线服务。"""
+
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+
+    async def record(
+        self,
+        patient_id: str,
+        entry_type: str,
+        title: str,
+        description: str = "",
+        metadata: dict[str, Any] | None = None,
+        related_id: str | None = None,
+    ) -> dict[str, Any]:
+        """记录一条时间线条目。"""
+        patient_uuid = UUID(normalize_patient_id(patient_id))
+
+        entry = TimelineEntry(
+            id=uuid4(),
+            patient_id=patient_uuid,
+            entry_type=entry_type,
+            title=title,
+            description=description or "",
+            related_id=related_id,
+            metadata_=metadata or {},
+            occurred_at=datetime.now(timezone.utc),
+        )
+        self.db.add(entry)
+        await self.db.flush()
+        await self.db.refresh(entry)
+
+        return self._to_dict(entry)
+
+    async def record_workflow_timeline(
+        self, patient_id: str, event_id: str, workflow_state: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """从 workflow 结果批量记录时间线。"""
+        state = workflow_state or {}
+        entries: list[dict[str, Any]] = []
+
+        # 1) 事件接收
+        entries.append(
+            await self.record(
+                patient_id=patient_id,
+                entry_type="event_received",
+                title="健康事件已接收",
+                description="系统已接收并进入玄同工作流引擎处理。",
+                related_id=event_id,
+                metadata={"event_id": event_id},
+            )
+        )
+
+        # 2) 风险评估
+        risk = state.get("clinical_risk")
+        if risk is not None:
+            level = getattr(risk, "level", None)
+            score = getattr(risk, "score", None)
+            triggers = getattr(risk, "trigger_indicators", None) or []
+            entries.append(
+                await self.record(
+                    patient_id=patient_id,
+                    entry_type="risk_assessed",
+                    title=f"临床风险评估：{level}",
+                    description=f"风险等级 {level}，评分 {score}。",
+                    related_id=event_id,
+                    metadata={"level": level, "score": score, "triggers": list(triggers)},
+                )
+            )
+
+        # 3) 会诊完成
+        notes = state.get("consultation_notes") or []
+        if notes:
+            roles = [getattr(n, "agent_role", None) for n in notes]
+            entries.append(
+                await self.record(
+                    patient_id=patient_id,
+                    entry_type="consultation_complete",
+                    title=f"多学科会诊完成（{len(notes)} 位成员）",
+                    description="、".join(str(r) for r in roles if r),
+                    related_id=event_id,
+                    metadata={"count": len(notes), "roles": roles},
+                )
+            )
+
+        # 4) 行动计划
+        plan = state.get("action_plan")
+        if plan is not None:
+            summary = getattr(plan, "summary", "") or ""
+            entries.append(
+                await self.record(
+                    patient_id=patient_id,
+                    entry_type="action_planned",
+                    title="行动计划已生成",
+                    description=summary,
+                    related_id=event_id,
+                    metadata={"actions": len(getattr(plan, "actions", []) or [])},
+                )
+            )
+
+        # 5) 任务创建
+        generated = state.get("generated_tasks") or []
+        if generated:
+            entries.append(
+                await self.record(
+                    patient_id=patient_id,
+                    entry_type="tasks_created",
+                    title=f"已生成 {len(generated)} 项任务",
+                    description="；".join(
+                        str(t.get("description", "")) for t in generated if isinstance(t, dict)
+                    ),
+                    related_id=event_id,
+                    metadata={
+                        "count": len(generated),
+                        "task_ids": [t.get("id") for t in generated if isinstance(t, dict)],
+                    },
+                )
+            )
+
+        # 6) 执行启动
+        execution = state.get("execution_result")
+        if execution is not None:
+            exec_tasks = getattr(execution, "tasks", []) or []
+            entries.append(
+                await self.record(
+                    patient_id=patient_id,
+                    entry_type="execution_started",
+                    title="执行阶段已启动",
+                    description=f"助理拆解出 {len(exec_tasks)} 项可执行任务。",
+                    related_id=event_id,
+                    metadata={"execution_tasks": len(exec_tasks)},
+                )
+            )
+
+        return entries
+
+    async def get_timeline(
+        self,
+        patient_id: str,
+        entry_type: str | None = None,
+        page: int = 1,
+        size: int = 50,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """查询患者时间线（按类型过滤 + 分页，时间升序）。"""
+        patient_uuid = UUID(normalize_patient_id(patient_id))
+
+        query = (
+            select(TimelineEntry)
+            .where(TimelineEntry.patient_id == patient_uuid)
+            .order_by(TimelineEntry.occurred_at.asc())
+        )
+
+        if entry_type:
+            query = query.where(TimelineEntry.entry_type == entry_type)
+
+        # 先查总数
+        from sqlalchemy import func
+        count_query = select(func.count()).select_from(TimelineEntry).where(
+            TimelineEntry.patient_id == patient_uuid
+        )
+        if entry_type:
+            count_query = count_query.where(TimelineEntry.entry_type == entry_type)
+
+        count_result = await self.db.execute(count_query)
+        total = count_result.scalar() or 0
+
+        # 分页
+        page = max(1, page)
+        size = max(1, size)
+        offset = (page - 1) * size
+        query = query.offset(offset).limit(size)
+
+        result = await self.db.execute(query)
+        entries = result.scalars().all()
+        return [self._to_dict(e) for e in entries], total
+
+    def _to_dict(self, entry: TimelineEntry) -> dict[str, Any]:
+        """将 ORM 对象转换为 dict。"""
+        return {
+            "id": str(entry.id),
+            "patient_id": str(entry.patient_id),
+            "entry_type": entry.entry_type,
+            "title": entry.title,
+            "description": entry.description or "",
+            "related_id": entry.related_id,
+            "metadata": entry.metadata_ or {},
+            "created_at": entry.occurred_at.isoformat() if entry.occurred_at else None,
+        }
+
+
+__all__ = ["DbTimelineService"]

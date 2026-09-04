@@ -1,0 +1,25 @@
+services:
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@supabase-db:5432/xuantong
+      - LLM_PROVIDER=mock
+    depends_on:
+      - supabase-db
+    volumes:
+      - ./xuantong:/app
+
+  supabase-db:
+    image: supabase/postgres:15
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: xuantong
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  pgdata:
