@@ -15,7 +15,24 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
+from app.exceptions import XuantongError
+
 logger = logging.getLogger(__name__)
+
+
+async def xuantong_exception_handler(
+    request: Request, exc: XuantongError
+) -> JSONResponse:
+    """处理玄同系统业务异常。
+
+    将 XuantongError 及其子类映射为统一 JSON 错误响应，
+    HTTP 状态码与业务 code 由异常自身携带。
+    """
+    logger.warning(
+        f"业务异常: {request.method} {request.url.path} -> "
+        f"[{exc.code}] {exc.message}"
+    )
+    return JSONResponse(status_code=exc.status_code, content=exc.to_dict())
 
 
 async def validation_exception_handler(

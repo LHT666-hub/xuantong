@@ -58,3 +58,15 @@ Thumbs.db
 
 # Qoder
 .qoder/
+
+# ─── Deployment artifacts: MUST stay tracked ─────────────────────────────
+# 显式保留，防止被上方的宽泛规则（lib/、dist/、*.db 等）误伤
+!requirements.txt
+!requirements-dev.txt
+!.github/
+!.dockerignore
+!Dockerfile
+!docker-compose.yml
+!.env.example
+# CI 生成的临时测试库应忽略
+/test.db

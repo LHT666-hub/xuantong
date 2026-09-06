@@ -9,6 +9,11 @@ from app.services.event_service import EventService
 from app.services.task_service import TaskService
 from app.services.outcome_service import OutcomeService, OUTCOME_TYPES
 from app.services.timeline_service import TimelineService
+from app.services.chat_service import (
+    ChatService,
+    get_chat_service,
+    reset_chat_service,
+)
 
 __all__ = [
     "InMemoryStore",
@@ -19,4 +24,7 @@ __all__ = [
     "OutcomeService",
     "OUTCOME_TYPES",
     "TimelineService",
+    "ChatService",
+    "get_chat_service",
+    "reset_chat_service",
 ]

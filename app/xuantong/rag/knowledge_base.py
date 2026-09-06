@@ -1,7 +1,8 @@
 """知识库管理 — 文档加载、索引与搜索。
 
-支持 BM25 检索（字符级分词，适配中文）；
-后续可接入 pgvector 做向量检索，实现真正的混合检索。
+支持 BM25 检索（字符级分词，适配中文）与零依赖哈希向量检索（HashingVectorizer）；
+两路结果按 RRF（Reciprocal Rank Fusion）融合。向量检索可通过配置开关，
+关闭或无向量时优雅降级到纯 BM25。
 """
 
 from __future__ import annotations
@@ -13,19 +14,40 @@ from typing import Any
 
 import numpy as np
 
+from app.config import Settings
 from app.xuantong.rag.audience_filter import AudienceFilter
+from app.xuantong.rag.hashing_vectorizer import HashingVectorizer
 from app.xuantong.rag.models import RetrievalResult
 
 logger = logging.getLogger(__name__)
 
 
 class KnowledgeBase:
-    """内存知识库 — 支持从目录加载文档并按 BM25 检索。"""
+    """内存知识库 — 支持从目录加载文档并按 BM25 + 向量混合检索。"""
 
-    def __init__(self, data_dir: str | None = None) -> None:
+    def __init__(
+        self,
+        data_dir: str | None = None,
+        vector_enabled: bool | None = None,
+        vector_dim: int | None = None,
+        vector_ngram: int | None = None,
+        rrf_k: int | None = None,
+    ) -> None:
+        settings = Settings()
         self._documents: list[dict[str, Any]] = []
         self._bm25_index = None
         self.data_dir = data_dir
+
+        # 向量检索配置（构造参数优先，否则读配置）
+        self._vector_enabled = (
+            vector_enabled if vector_enabled is not None else settings.rag_vector_enabled
+        )
+        dim = vector_dim if vector_dim is not None else settings.rag_vector_dim
+        ngram = vector_ngram if vector_ngram is not None else settings.rag_vector_ngram
+        self._rrf_k = rrf_k if rrf_k is not None else settings.rag_rrf_k
+        self._vectorizer = HashingVectorizer(dim=dim, ngram=ngram) if self._vector_enabled else None
+        # 与 self._documents 一一对齐的文档向量（未启用向量时为空）
+        self._vectors: list[list[float]] = []
 
     # ── 文档管理 ─────────────────────────────────────────────
 
@@ -46,6 +68,9 @@ class KnowledgeBase:
             "content": content,
             "metadata": meta,
         })
+        # 同步计算并存储文档向量（与 _documents 索引一一对齐）
+        if self._vectorizer is not None:
+            self._vectors.append(self._vectorizer.embed(content))
         # 使 BM25 索引失效，下次检索时懒重建
         self._bm25_index = None
         logger.info("知识库: 添加文档 (metadata=%s)", meta)
@@ -104,10 +129,14 @@ class KnowledgeBase:
         return await self.hybrid_search(query, top_k=top_k)
 
     async def hybrid_search(self, query: str, top_k: int = 5) -> list[RetrievalResult]:
-        """BM25 混合检索（字符级分词）。
+        """混合检索（BM25 + 零依赖哈希向量，RRF 融合）。
 
-        当前阶段仅用 BM25；后续接入向量检索后，
-        在此合并两路结果并按 RRF 融合。
+        流程：
+        1. BM25 字符级检索（字符分词，适配中文）
+        2. 向量检索（启用且已有文档向量时）：查询向量 vs 文档向量余弦相似度
+        3. RRF 融合两路排名：score = sum(1 / (k + rank_i))
+
+        向量未启用或无向量（0 文档）时优雅降级到纯 BM25。
         """
         if not self._documents or not query.strip():
             return []
@@ -124,6 +153,19 @@ class KnowledgeBase:
 
         scores = self._bm25_index.get_scores(tokenized_query)
 
+        # 向量检索是否可用（启用 + 向量与文档数量对齐 + 非空）
+        vector_active = (
+            self._vectorizer is not None
+            and len(self._vectors) == len(self._documents)
+            and len(self._documents) > 0
+        )
+
+        if vector_active:
+            return self._hybrid_rrf(query, scores, top_k)
+        return self._bm25_only(scores, top_k)
+
+    def _bm25_only(self, scores: Any, top_k: int) -> list[RetrievalResult]:
+        """纯 BM25 检索 — 保留小语料 min-max 归一化逻辑（不过滤 score<=0）。"""
         # 取 top_k * 3 候选（为后续重排留余量）
         candidate_k = min(top_k * 3, len(self._documents))
         top_indices = np.argsort(scores)[::-1][:candidate_k]
@@ -157,6 +199,53 @@ class KnowledgeBase:
             )
 
         return results[:top_k]
+
+    def _hybrid_rrf(self, query: str, bm25_scores: Any, top_k: int) -> list[RetrievalResult]:
+        """BM25 + 向量两路排名做 RRF 融合。
+
+        rrf_score(d) = sum(1 / (k + rank_i(d)))，归一化除以理论最大值 2/(k+1)。
+        """
+        n_docs = len(self._documents)
+        candidate_k = min(max(top_k * 3, top_k), n_docs)
+        k = self._rrf_k
+
+        # ── BM25 排名（降序）──
+        bm25_order = np.argsort(bm25_scores)[::-1][:candidate_k]
+        # ── 向量排名：查询向量 vs 所有文档向量的余弦相似度（降序）──
+        assert self._vectorizer is not None
+        query_vec = self._vectorizer.embed(query)
+        cos_scores = [
+            self._vectorizer.cosine_similarity(query_vec, self._vectors[i])
+            for i in range(n_docs)
+        ]
+        vector_order = sorted(range(n_docs), key=lambda i: cos_scores[i], reverse=True)[:candidate_k]
+
+        # ── RRF 累加（rank 从 1 开始）──
+        rrf: dict[int, float] = {}
+        for rank, idx in enumerate((int(i) for i in bm25_order), start=1):
+            rrf[idx] = rrf.get(idx, 0.0) + 1.0 / (k + rank)
+        for rank, idx in enumerate(vector_order, start=1):
+            rrf[idx] = rrf.get(idx, 0.0) + 1.0 / (k + rank)
+
+        # 归一化：理论最大值 = 2/(k+1)（两路均排第一）
+        max_possible = 2.0 / (k + 1)
+        sorted_indices = sorted(rrf.keys(), key=lambda i: rrf[i], reverse=True)
+
+        results: list[RetrievalResult] = []
+        for idx in sorted_indices[:top_k]:
+            doc = self._documents[idx]
+            results.append(
+                RetrievalResult(
+                    content=doc["content"],
+                    source=doc.get("metadata", {}).get("source", ""),
+                    score=round(rrf[idx] / max_possible, 4),
+                    bm25_score=float(bm25_scores[idx]),
+                    vector_score=round(float(cos_scores[idx]), 4),
+                    metadata=doc.get("metadata", {}),
+                )
+            )
+
+        return results
 
     # ── 内部 ──────────────────────────────────────────────────
 

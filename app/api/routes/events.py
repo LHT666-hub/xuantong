@@ -235,14 +235,29 @@ async def get_event_status(request: Request, event_id: str):
 async def _run_workflow(
     request: Request, event: EventCreate, event_id: str, now: datetime
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
-    """触发 workflow，返回 (摘要, 最终State)。异常降级不阻断事件创建。"""
+    """触发 workflow，返回 (摘要, 最终State)。异常降级不阻断事件创建。
+
+    优先使用 ``workflow.stream_run()``（逐节点广播进度到 progress_hub，
+    供 ``GET /api/v1/events/{id}/stream`` SSE 实时推送）；旧版 workflow
+    无 stream_run 时回退到 ``run()``。
+    """
     workflow = getattr(request.app.state, "workflow", None)
     if workflow is None:
         return {"status": "skipped", "reason": "workflow_not_initialized"}, None
 
     event_data = _build_event_data(event, event_id, now)
     try:
-        state = await workflow.run(event_data=event_data, thread_id=str(uuid4()))
+        if hasattr(workflow, "stream_run"):
+            state: dict[str, Any] | None = None
+            async for progress in workflow.stream_run(
+                event_data=event_data, thread_id=str(uuid4())
+            ):
+                if progress.get("state") is not None:
+                    state = progress["state"]
+            if state is None:
+                return {"status": "failed", "reason": "workflow_no_final_state"}, None
+        else:
+            state = await workflow.run(event_data=event_data, thread_id=str(uuid4()))
         return _summarize_workflow(state), state
     except Exception as e:
         logger.exception(f"events: workflow 执行失败 event_id={event_id}: {e}")

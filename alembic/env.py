@@ -9,8 +9,8 @@ from alembic import context
 from app.config import Settings
 from app.database.base import Base
 
-# Import all models here so Alembic can detect them
-# from app.models import *  # noqa: F401, F403
+# Import all models so Alembic can detect them via Base.metadata
+import app.models  # noqa: F401 — triggers __init__.py which loads all 18 model classes
 
 # this is the Alembic Config object
 config = context.config

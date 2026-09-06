@@ -8,10 +8,18 @@ from app.services.db.event import DbEventService
 from app.services.db.task import DbTaskService
 from app.services.db.outcome import DbOutcomeService
 from app.services.db.timeline import DbTimelineService
+from app.services.db.chat_service import DbChatService
+from app.services.db.patient import DbPatientService
+from app.services.db.care_team import DbCareTeamService
+from app.services.db.health_record import DbHealthRecordService
 
 __all__ = [
     "DbEventService",
     "DbTaskService",
     "DbOutcomeService",
     "DbTimelineService",
+    "DbChatService",
+    "DbPatientService",
+    "DbCareTeamService",
+    "DbHealthRecordService",
 ]

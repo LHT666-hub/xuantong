@@ -26,7 +26,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, AsyncIterator
 from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
@@ -177,6 +178,88 @@ class XuantongWorkflow(WorkflowNodes):
             f"steps={len(final_state.get('flow_log') or [])}"
         )
         return final_state
+
+    async def stream_run(
+        self,
+        event_data: dict[str, Any],
+        patient_context: PatientContext | dict | None = None,
+        thread_id: str | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """流式执行工作流：逐节点产出进度，并向 SSE 进度中心广播。
+
+        桥接 LangGraph ``astream(stream_mode="updates")``：每个节点完成后
+        产出一条 ``{"node", "status", "timestamp"}`` 进度事件；最后一条为
+        终态 ``{"node": "__end__", "status": "completed", "final_status", "state"}``
+        （含完整最终 State）。
+
+        若 ``event_data["event_id"]`` 存在，同时在全局 ``progress_hub`` 开启
+        频道实时广播，供 ``GET /api/v1/events/{id}/stream`` SSE 推送；
+        工作流结束（含异常）时广播 ``event: complete`` / 失败终态。
+        不支持 astream 的图实现自动回退到 ``run()``。
+
+        Yields:
+            节点进度 dict；最后一条含 ``state`` 字段（最终 XuantongState）。
+        """
+        thread_id = thread_id or uuid4().hex
+
+        initial: dict[str, Any] = {
+            "event_data": event_data or {},
+            "thread_id": thread_id,
+            "messages": [],
+            "consultation_notes": [],
+            "flow_log": [],
+        }
+        if patient_context is not None:
+            initial["patient_context"] = patient_context
+
+        # 惰性导入，避免 workflow ↔ services 包层面的循环依赖
+        from app.services.progress_hub import progress_hub
+
+        event_id = str((event_data or {}).get("event_id") or "")
+        channel = progress_hub.open(event_id) if event_id else None
+
+        config = {"configurable": {"thread_id": thread_id}}
+        logger.info(f"workflow: 流式启动 thread_id={thread_id} event_id={event_id or '-'}")
+
+        final_state: dict[str, Any] | None = None
+        try:
+            if hasattr(self._graph, "astream"):
+                async for update in self._graph.astream(
+                    initial, config=config, stream_mode="updates"
+                ):
+                    for node_name in update or {}:
+                        progress = {
+                            "node": node_name,
+                            "status": "completed",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                        if channel is not None:
+                            channel.publish(dict(progress))
+                        yield progress
+                snapshot = await self._graph.aget_state(config)
+                final_state = dict(snapshot.values or {})
+            else:  # 回退：非 LangGraph 图实现（如测试替身）无 astream
+                final_state = await self.run(event_data, patient_context, thread_id)
+        except Exception as e:
+            logger.exception(f"workflow: 流式执行失败 thread_id={thread_id}: {e}")
+            if channel is not None:
+                channel.finish("failed")
+            raise
+
+        final_status = "pending_human" if final_state.get("human_required") else "completed"
+        if channel is not None:
+            channel.finish(final_status)
+        logger.info(
+            f"workflow: 流式完成 thread_id={thread_id}, "
+            f"steps={len(final_state.get('flow_log') or [])}, final_status={final_status}"
+        )
+        yield {
+            "node": "__end__",
+            "status": "completed",
+            "final_status": final_status,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "state": final_state,
+        }
 
 
 __all__ = ["XuantongWorkflow"]

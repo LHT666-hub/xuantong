@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_key: str = ""
 
+    # Supabase Storage（文档/图片对象存储）
+    supabase_storage_bucket: str = "documents"
+    supabase_presign_expires_seconds: int = 3600
+
     # LLM
     llm_provider: str = "mock"  # mock / qwen / deepseek
     llm_api_key: str = ""
@@ -55,9 +59,23 @@ class Settings(BaseSettings):
     # RAG 混合检索配置
     rag_reranker_model: str = "BAAI/bge-reranker-v2-m3"
     rag_bm25_enabled: bool = True
-    rag_vector_enabled: bool = False  # 需要 embedding 模型
+    rag_vector_enabled: bool = True  # 零依赖哈希向量器（HashingVectorizer）
+    rag_vector_dim: int = 256        # 哈希向量维度
+    rag_vector_ngram: int = 3        # 字符 n-gram 的 n 值
     rag_rrf_k: int = 60
     rag_use_reranker: bool = True
+
+    # --- Workflow ---
+    workflow_checkpoint_backend: str = "memory"  # memory / postgres
+
+    # --- Observability ---
+    log_level: str = "INFO"
+    cors_allowed_origins: str = "*"
+
+    # Tracing (LangSmith) —— 默认关闭，通过环境变量无侵入接入 LangGraph 链路追踪
+    enable_tracing: bool = False
+    langsmith_api_key: str = ""
+    langsmith_project: str = "xuantong"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
@@ -77,3 +95,15 @@ class Settings(BaseSettings):
         """根据 Agent 角色获取对应模型名称"""
         tier = self.llm_agent_model_map.get(agent_role, "execution")
         return self.get_model_for_tier(tier)
+
+    def get_timeout_for_tier(self, tier: str) -> float:
+        """根据模型层级获取超时时间（秒）。
+
+        当前所有层级共用全局 llm_timeout；未来可按层级差异化配置。
+        """
+        return self.llm_timeout
+
+    # --- Authentication ---
+    jwt_secret: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60

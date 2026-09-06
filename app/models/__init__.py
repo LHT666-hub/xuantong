@@ -16,6 +16,7 @@ from app.models.timeline import TimelineEntry
 from app.models.agent_run import AgentRun
 from app.models.workflow_run import WorkflowRun
 from app.models.audit_log import AuditLog
+from app.models.chat_message import ChatMessage
 
 __all__ = [
     "User",
@@ -36,4 +37,5 @@ __all__ = [
     "AgentRun",
     "WorkflowRun",
     "AuditLog",
+    "ChatMessage",
 ]

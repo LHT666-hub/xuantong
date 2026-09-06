@@ -1,25 +1,79 @@
+# ─── 玄同 Xuantong 生产编排 ──────────────────────────────────────────────
+# 说明：Compose 会自动加载项目根目录下的 .env 用于 ${VAR} 变量插值。
+#      environment 中的值优先级高于 env_file，用于强制指向编排内的服务。
+
+name: xuantong
+
 services:
   backend:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: xuantong:latest
+    restart: unless-stopped
     ports:
       - "8000:8000"
+    # 透传宿主 .env 中的全部业务变量（LLM_API_KEY / JWT_SECRET / RAG_* 等）；
+    # .env 缺失时不阻断启动，回退到镜像与下方 environment 的默认值。
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@supabase-db:5432/xuantong
-      - LLM_PROVIDER=mock
+      # 强制指向编排内的服务主机名，覆盖 .env 中可能存在的本地配置
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-xuantong}
+      REDIS_URL: redis://redis:6379/0
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      DEBUG: "false"
     depends_on:
-      - supabase-db
-    volumes:
-      - ./xuantong:/app
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=4)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
-  supabase-db:
-    image: supabase/postgres:15
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: xuantong
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-xuantong}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-xuantong}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Redis —— 为后续缓存 / 任务队列 / 会话状态预留
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
 volumes:
   pgdata:
+  redisdata:

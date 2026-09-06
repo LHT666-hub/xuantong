@@ -1,0 +1,502 @@
+[
+  {
+    "id": "htn_001",
+    "question": "高血压患者的血压分级标准是什么",
+    "expected_keywords": ["收缩压", "舒张压", "分级", "140-159"],
+    "expected_docs": ["hypertension_guidelines", "hypertension_grassroots"],
+    "audience": "doctor",
+    "difficulty": "easy",
+    "category": "hypertension",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "htn_002",
+    "question": "高血压的诊断标准是多少",
+    "expected_keywords": ["诊断标准", "非同日", "140", "90"],
+    "expected_docs": ["hypertension_guidelines", "hypertension_grassroots"],
+    "audience": "doctor",
+    "difficulty": "easy",
+    "category": "hypertension",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "htn_003",
+    "question": "高血压患者的治疗目标血压值是多少",
+    "expected_keywords": ["治疗目标", "140/90", "130/80"],
+    "expected_docs": ["hypertension_guidelines", "hypertension_grassroots"],
+    "audience": "doctor",
+    "difficulty": "easy",
+    "category": "hypertension",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "htn_004",
+    "question": "高血压患者的生活方式干预有哪些",
+    "expected_keywords": ["食盐", "运动", "BMI", "戒烟"],
+    "expected_docs": ["hypertension_guidelines", "hypertension_grassroots"],
+    "audience": "doctor",
+    "difficulty": "easy",
+    "category": "hypertension",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "htn_005",
+    "question": "高血压患者需要转诊的指征有哪些",
+    "expected_keywords": ["转诊指征", "180/110", "靶器官", "继发性高血压"],
+    "expected_docs": ["hypertension_grassroots"],
+    "audience": "doctor",
+    "difficulty": "medium",
+    "category": "hypertension",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "htn_006",
+    "question": "基层高血压患者血压未达标时多久随访一次",
+    "expected_keywords": ["随访", "2-4 周", "3 个月"],
+    "expected_docs": ["hypertension_grassroots"],
+    "audience": "doctor",
+    "difficulty": "medium",
+    "category": "hypertension",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "htn_007",
+    "question": "老年高血压患者的血压控制目标",
+    "expected_keywords": ["老年", "150", "收缩压"],
+    "expected_docs": ["hypertension_guidelines", "hypertension_grassroots"],
+    "audience": "doctor",
+    "difficulty": "medium",
+    "category": "hypertension",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "dm_001",
+    "question": "2型糖尿病患者的一线用药是什么",
+    "expected_keywords": ["二甲双胍", "一线"],
+    "expected_docs": ["diabetes_guidelines", "diabetes_grassroots", "antidiabetic_medications"],
+    "audience": "doctor",
+    "difficulty": "easy",
+    "category": "diabetes",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "dm_002",
+    "question": "糖尿病的诊断标准是什么",
+    "expected_keywords": ["空腹血糖", "7.0", "11.1", "诊断标准"],
+    "expected_docs": ["diabetes_guidelines", "diabetes_grassroots"],
+    "audience": "doctor",
+    "difficulty": "easy",
+    "category": "diabetes",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "dm_003",
+    "question": "糖尿病患者的血糖控制目标",
+    "expected_keywords": ["控制目标", "HbA1c", "7.0%"],
+    "expected_docs": ["diabetes_guidelines", "diabetes_grassroots"],
+    "audience": "doctor",
+    "difficulty": "easy",
+    "category": "diabetes",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "dm_004",
+    "question": "糖尿病患者发生低血糖如何处理",
+    "expected_keywords": ["低血糖", "葡萄糖", "碳水"],
+    "expected_docs": ["diabetes_guidelines", "diabetes_grassroots", "antidiabetic_medications"],
+    "audience": "doctor",
+    "difficulty": "medium",
+    "category": "diabetes",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "dm_005",
+    "question": "糖尿病并发症筛查项目有哪些",
+    "expected_keywords": ["并发症", "眼底", "尿微量白蛋白", "足部"],
+    "expected_docs": ["diabetes_guidelines", "diabetes_grassroots"],
+    "audience": "doctor",
+    "difficulty": "medium",
+    "category": "diabetes",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "dm_006",
+    "question": "糖尿病患者的血糖监测方法有哪些",
+    "expected_keywords": ["血糖监测", "自我监测", "持续血糖监测"],
+    "expected_docs": ["diabetes_grassroots", "diabetes_guidelines"],
+    "audience": "doctor",
+    "difficulty": "medium",
+    "category": "diabetes",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "dm_007",
+    "question": "糖尿病的分型有哪些",
+    "expected_keywords": ["分型", "妊娠期", "胰岛素抵抗"],
+    "expected_docs": ["diabetes_guidelines", "diabetes_grassroots"],
+    "audience": "doctor",
+    "difficulty": "easy",
+    "category": "diabetes",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "copd_001",
+    "question": "慢阻肺COPD的诊断标准是什么",
+    "expected_keywords": ["FEV1/FVC", "70%", "气流受限", "肺功能"],
+    "expected_docs": ["copd_grassroots"],
+    "audience": "doctor",
+    "difficulty": "easy",
+    "category": "copd",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "copd_002",
+    "question": "COPD急性加重如何分级处理",
+    "expected_keywords": ["急性加重", "轻度", "中度", "重度"],
+    "expected_docs": ["copd_grassroots"],
+    "audience": "doctor",
+    "difficulty": "medium",
+    "category": "copd",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "copd_003",
+    "question": "慢阻肺稳定期的管理和吸入药物有哪些",
+    "expected_keywords": ["稳定期", "戒烟", "肺康复", "噻托溴铵"],
+    "expected_docs": ["copd_grassroots", "essential_drug_list"],
+    "audience": "doctor",
+    "difficulty": "medium",
+    "category": "copd",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "copd_004",
+    "question": "慢阻肺家庭氧疗的指征是什么",
+    "expected_keywords": ["家庭氧疗", "氧疗", "55"],
+    "expected_docs": ["copd_grassroots"],
+    "audience": "doctor",
+    "difficulty": "hard",
+    "category": "copd",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "copd_005",
+    "question": "慢阻肺COPD的高危人群有哪些",
+    "expected_keywords": ["高危人群", "吸烟", "粉尘", "生物燃料"],
+    "expected_docs": ["copd_grassroots"],
+    "audience": "doctor",
+    "difficulty": "easy",
+    "category": "copd",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "copd_006",
+    "question": "慢阻肺患者的随访管理频次是多久",
+    "expected_keywords": ["随访", "2 次", "基本公共卫生服务"],
+    "expected_docs": ["copd_grassroots", "basic_public_health_service"],
+    "audience": "doctor",
+    "difficulty": "medium",
+    "category": "copd",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "stroke_001",
+    "question": "如何快速识别脑卒中FAST原则",
+    "expected_keywords": ["FAST", "面部", "手臂", "言语"],
+    "expected_docs": ["stroke_grassroots"],
+    "audience": "doctor",
+    "difficulty": "easy",
+    "category": "stroke",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "stroke_002",
+    "question": "怀疑脑卒中的现场急救要点有哪些",
+    "expected_keywords": ["急救", "120", "记录发病时间", "气道"],
+    "expected_docs": ["stroke_grassroots"],
+    "audience": "doctor",
+    "difficulty": "easy",
+    "category": "stroke",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "stroke_003",
+    "question": "脑梗死静脉溶栓的时间窗是多久",
+    "expected_keywords": ["溶栓", "4.5 小时", "阿替普酶", "取栓"],
+    "expected_docs": ["stroke_grassroots"],
+    "audience": "doctor",
+    "difficulty": "medium",
+    "category": "stroke",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "stroke_004",
+    "question": "脑卒中的二级预防用药有哪些",
+    "expected_keywords": ["二级预防", "抗血小板", "阿司匹林", "他汀"],
+    "expected_docs": ["stroke_grassroots", "essential_drug_list"],
+    "audience": "doctor",
+    "difficulty": "medium",
+    "category": "stroke",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "stroke_005",
+    "question": "脑卒中的危险因素有哪些",
+    "expected_keywords": ["危险因素", "高血压", "心房颤动"],
+    "expected_docs": ["stroke_grassroots"],
+    "audience": "doctor",
+    "difficulty": "easy",
+    "category": "stroke",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "stroke_006",
+    "question": "脑卒中患者康复治疗何时开始",
+    "expected_keywords": ["康复", "早期康复", "24-48 小时", "吞咽"],
+    "expected_docs": ["stroke_grassroots"],
+    "audience": "doctor",
+    "difficulty": "medium",
+    "category": "stroke",
+    "doc_type": "guidelines"
+  },
+  {
+    "id": "policy_nat_001",
+    "question": "国家基本公共卫生服务项目有哪些",
+    "expected_keywords": ["基本公共卫生服务", "居民健康档案", "健康教育", "预防接种"],
+    "expected_docs": ["basic_public_health_service", "public_health_services"],
+    "audience": "public_health",
+    "difficulty": "easy",
+    "category": "national_policy",
+    "doc_type": "policies"
+  },
+  {
+    "id": "policy_nat_002",
+    "question": "高血压患者每年需要随访几次",
+    "expected_keywords": ["4 次", "随访", "面对面"],
+    "expected_docs": ["basic_public_health_service", "public_health_services"],
+    "audience": "public_health",
+    "difficulty": "easy",
+    "category": "national_policy",
+    "doc_type": "policies"
+  },
+  {
+    "id": "policy_nat_003",
+    "question": "家庭医生签约服务的重点人群有哪些",
+    "expected_keywords": ["签约", "重点人群", "老年人", "孕产妇"],
+    "expected_docs": ["family_doctor_contracting", "public_health_services"],
+    "audience": "public_health",
+    "difficulty": "easy",
+    "category": "national_policy",
+    "doc_type": "policies"
+  },
+  {
+    "id": "policy_nat_004",
+    "question": "家庭医生签约服务包分为哪几类",
+    "expected_keywords": ["签约服务包", "基础包", "个性化包", "医保"],
+    "expected_docs": ["family_doctor_contracting"],
+    "audience": "public_health",
+    "difficulty": "medium",
+    "category": "national_policy",
+    "doc_type": "policies"
+  },
+  {
+    "id": "policy_nat_005",
+    "question": "老年人健康管理服务内容包括什么",
+    "expected_keywords": ["老年人", "健康管理", "体格检查", "辅助检查"],
+    "expected_docs": ["basic_public_health_service", "public_health_services"],
+    "audience": "public_health",
+    "difficulty": "easy",
+    "category": "national_policy",
+    "doc_type": "policies"
+  },
+  {
+    "id": "policy_nat_006",
+    "question": "家庭医生签约服务的首诊负责与转诊机制",
+    "expected_keywords": ["首诊负责", "转诊", "绿色通道", "分级诊疗"],
+    "expected_docs": ["family_doctor_contracting"],
+    "audience": "public_health",
+    "difficulty": "medium",
+    "category": "national_policy",
+    "doc_type": "policies"
+  },
+  {
+    "id": "policy_sh_001",
+    "question": "上海1+1+1家庭医生签约模式是什么",
+    "expected_keywords": ["1+1+1", "社区卫生服务中心", "区级医院", "市级医院"],
+    "expected_docs": ["family_doctor_111"],
+    "audience": "public_health",
+    "difficulty": "easy",
+    "category": "shanghai_policy",
+    "doc_type": "policies"
+  },
+  {
+    "id": "policy_sh_002",
+    "question": "上海慢性病长处方的最长期限是多久",
+    "expected_keywords": ["长处方", "12 周", "长期处方", "延伸处方"],
+    "expected_docs": ["family_doctor_111"],
+    "audience": "public_health",
+    "difficulty": "medium",
+    "category": "shanghai_policy",
+    "doc_type": "policies"
+  },
+  {
+    "id": "policy_sh_003",
+    "question": "上海四位一体慢性病防控模式的内容",
+    "expected_keywords": ["四位一体", "公共卫生机构", "社区卫生服务中心", "双向转诊"],
+    "expected_docs": ["chronic_disease_management"],
+    "audience": "public_health",
+    "difficulty": "medium",
+    "category": "shanghai_policy",
+    "doc_type": "policies"
+  },
+  {
+    "id": "policy_sh_004",
+    "question": "上海678银龄健康守护行动的内容是什么",
+    "expected_keywords": ["678", "银龄", "65 岁", "失能"],
+    "expected_docs": ["chronic_disease_management"],
+    "audience": "public_health",
+    "difficulty": "hard",
+    "category": "shanghai_policy",
+    "doc_type": "policies"
+  },
+  {
+    "id": "policy_sh_005",
+    "question": "上海家庭医生签约居民的核心权益有哪些",
+    "expected_keywords": ["优先预约", "长处方", "延伸处方", "电子健康档案"],
+    "expected_docs": ["family_doctor_111"],
+    "audience": "public_health",
+    "difficulty": "easy",
+    "category": "shanghai_policy",
+    "doc_type": "policies"
+  },
+  {
+    "id": "policy_fx_001",
+    "question": "奉贤区家庭医生签约率是多少",
+    "expected_keywords": ["签约率", "46.77", "签约人数"],
+    "expected_docs": ["family_doctor_service"],
+    "audience": "public_health",
+    "difficulty": "medium",
+    "category": "fengxian_policy",
+    "doc_type": "policies"
+  },
+  {
+    "id": "policy_fx_002",
+    "question": "奉贤区红黄绿风险分级管理策略是什么",
+    "expected_keywords": ["红黄绿", "风险分级", "高风险", "红色"],
+    "expected_docs": ["family_doctor_service"],
+    "audience": "public_health",
+    "difficulty": "medium",
+    "category": "fengxian_policy",
+    "doc_type": "policies"
+  },
+  {
+    "id": "policy_fx_003",
+    "question": "奉贤区组建了多少个家庭医生团队",
+    "expected_keywords": ["家庭医生团队", "156", "18 家社区卫生服务中心"],
+    "expected_docs": ["family_doctor_service"],
+    "audience": "public_health",
+    "difficulty": "hard",
+    "category": "fengxian_policy",
+    "doc_type": "policies"
+  },
+  {
+    "id": "policy_fx_004",
+    "question": "奉贤区社区特色专科建设情况如何",
+    "expected_keywords": ["特色专科", "30 个", "资源下沉"],
+    "expected_docs": ["family_doctor_service"],
+    "audience": "public_health",
+    "difficulty": "hard",
+    "category": "fengxian_policy",
+    "doc_type": "policies"
+  },
+  {
+    "id": "policy_fx_005",
+    "question": "奉贤区先体验后签约的服务模式",
+    "expected_keywords": ["先体验后签约", "医养结合", "医联体"],
+    "expected_docs": ["family_doctor_service"],
+    "audience": "public_health",
+    "difficulty": "medium",
+    "category": "fengxian_policy",
+    "doc_type": "policies"
+  },
+  {
+    "id": "drug_001",
+    "question": "ACEI类降压药的不良反应和禁忌症有哪些",
+    "expected_keywords": ["ACEI", "干咳", "高钾血症", "肾动脉狭窄"],
+    "expected_docs": ["medication_safety", "antihypertensive_medications"],
+    "audience": "pharmacist",
+    "difficulty": "medium",
+    "category": "drug",
+    "doc_type": "drugs"
+  },
+  {
+    "id": "drug_002",
+    "question": "二甲双胍的禁忌症有哪些",
+    "expected_keywords": ["二甲双胍", "eGFR", "禁忌", "乳酸酸中毒"],
+    "expected_docs": ["antidiabetic_medications"],
+    "audience": "doctor",
+    "difficulty": "medium",
+    "category": "drug",
+    "doc_type": "drugs"
+  },
+  {
+    "id": "drug_003",
+    "question": "SGLT-2抑制剂的代表药物和不良反应",
+    "expected_keywords": ["SGLT-2", "达格列净", "恩格列净", "泌尿生殖道感染"],
+    "expected_docs": ["antidiabetic_medications", "diabetes_grassroots"],
+    "audience": "doctor",
+    "difficulty": "medium",
+    "category": "drug",
+    "doc_type": "drugs"
+  },
+  {
+    "id": "drug_004",
+    "question": "降压药的联合用药推荐组合有哪些",
+    "expected_keywords": ["联合用药", "推荐组合", "不推荐"],
+    "expected_docs": ["antihypertensive_medications", "medication_safety"],
+    "audience": "pharmacist",
+    "difficulty": "medium",
+    "category": "drug",
+    "doc_type": "drugs"
+  },
+  {
+    "id": "drug_005",
+    "question": "β受体阻滞剂的禁忌症有哪些",
+    "expected_keywords": ["受体阻滞剂", "心动过缓", "房室传导阻滞", "哮喘"],
+    "expected_docs": ["medication_safety", "antihypertensive_medications"],
+    "audience": "pharmacist",
+    "difficulty": "medium",
+    "category": "drug",
+    "doc_type": "drugs"
+  },
+  {
+    "id": "drug_006",
+    "question": "基层常用的调脂和抗血小板药物有哪些",
+    "expected_keywords": ["阿托伐他汀", "阿司匹林", "氯吡格雷", "调脂"],
+    "expected_docs": ["essential_drug_list"],
+    "audience": "pharmacist",
+    "difficulty": "medium",
+    "category": "drug",
+    "doc_type": "drugs"
+  },
+  {
+    "id": "drug_007",
+    "question": "常用降糖药有哪些类别",
+    "expected_keywords": ["磺脲类", "格列美脲", "阿卡波糖", "胰岛素"],
+    "expected_docs": ["antidiabetic_medications", "essential_drug_list"],
+    "audience": "pharmacist",
+    "difficulty": "easy",
+    "category": "drug",
+    "doc_type": "drugs"
+  },
+  {
+    "id": "drug_008",
+    "question": "基层抗菌药物使用有哪些注意事项",
+    "expected_keywords": ["阿莫西林", "皮试", "左氧氟沙星", "抗生素"],
+    "expected_docs": ["essential_drug_list"],
+    "audience": "pharmacist",
+    "difficulty": "hard",
+    "category": "drug",
+    "doc_type": "drugs"
+  }
+]
