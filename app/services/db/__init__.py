@@ -12,6 +12,7 @@ from app.services.db.chat_service import DbChatService
 from app.services.db.patient import DbPatientService
 from app.services.db.care_team import DbCareTeamService
 from app.services.db.health_record import DbHealthRecordService
+from app.services.db.document import DbDocumentService
 
 __all__ = [
     "DbEventService",
@@ -22,4 +23,5 @@ __all__ = [
     "DbPatientService",
     "DbCareTeamService",
     "DbHealthRecordService",
+    "DbDocumentService",
 ]

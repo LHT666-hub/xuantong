@@ -24,6 +24,7 @@ from typing import Any
 from app.schemas.agent import AgentResult
 from app.schemas.clinical import ClinicalContext
 from app.schemas.patient import PatientContext
+from app.xuantong.llm.provider import ModelTier
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,10 @@ class BaseAgent:
 
     # 子类的系统提示词（角色定位 + 边界 + 输出格式约束）
     SYSTEM_PROMPT: str = ""
+
+    # 子类可显式声明模型层级，覆盖 config 中 agent_role → tier 的默认映射。
+    # 为 None 时（默认）沿用 LLMRuntime 依据 agent_role 的自动路由，行为不变。
+    model_tier: ModelTier | None = None
 
     # 结构化输出的默认采样温度（低温以提升 JSON 稳定性）
     json_temperature: float = 0.3
@@ -133,6 +138,7 @@ class BaseAgent:
                     temperature=temp,
                     max_tokens=max_tokens,
                     extra_body=extra_body,
+                    model_tier=self.model_tier,
                 )
             except Exception as e:  # LLM 不可用 / 超时 / 超出调用上限
                 logger.error(f"{self.display_name}: LLM 调用失败: {e}")

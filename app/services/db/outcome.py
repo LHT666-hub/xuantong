@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.outcome import ServiceOutcome
@@ -115,6 +115,32 @@ class DbOutcomeService:
         )
         outcomes = result.scalars().all()
         return [self._to_dict(o) for o in outcomes]
+
+    async def list_all_outcomes(
+        self, page: int = 1, size: int = 20
+    ) -> tuple[list[dict[str, Any]], int]:
+        """全量分页查询服务结果（创建时间倒序）。
+
+        用于 ``GET /api/outcomes`` 在 patient_id / task_id 均缺省时的列表返回，
+        此前该分支恒返回空数组。返回 (rows, total)。
+        """
+        page = max(1, page)
+        size = max(1, min(size, 200))
+
+        total = (
+            await self.db.execute(
+                select(func.count()).select_from(ServiceOutcome)
+            )
+        ).scalar() or 0
+
+        result = await self.db.execute(
+            select(ServiceOutcome)
+            .order_by(ServiceOutcome.created_at.desc())
+            .offset((page - 1) * size)
+            .limit(size)
+        )
+        outcomes = result.scalars().all()
+        return [self._to_dict(o) for o in outcomes], int(total)
 
     def _to_dict(self, outcome: ServiceOutcome) -> dict[str, Any]:
         """将 ORM 对象转换为 dict。"""

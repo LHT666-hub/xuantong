@@ -31,6 +31,7 @@ from app.api.middleware.error_handler import (
     validation_exception_handler,
     generic_exception_handler,
     xuantong_exception_handler,
+    http_exception_handler,
 )
 from app.api.middleware.request_logging import RequestLoggingMiddleware
 from app.observability.logging import configure_structured_logging
@@ -284,6 +285,11 @@ app.add_middleware(
 app.add_middleware(RequestLoggingMiddleware)
 
 # ── 全局异常处理 ─────────────────────────────────────────────────────────────
+# HTTPException 统一包装为 {"detail":..., "error":{...}} 兼容结构（老客户端读 detail，
+# 新客户端读 error.code/message）。StarletteHTTPException 是 FastAPI HTTPException 的父类。
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(XuantongError, xuantong_exception_handler)
 app.add_exception_handler(Exception, generic_exception_handler)

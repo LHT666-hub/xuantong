@@ -11,6 +11,10 @@
 持久化：``app.state.session_factory`` 存在时用 ``DbChatService``（生产），
 否则回退到内存单例 ``ChatService``（开发/测试）。
 
+说明：``app.main.lifespan`` **无条件**创建 ``session_factory``，且 ``DATABASE_URL``
+默认为 ``sqlite+aiosqlite:///./xuantong.db``，故默认配置下会话恒走数据库持久化，
+重启不丢会话。内存单例仅为**无 DB 时的兜底**，生产必须配置 ``DATABASE_URL``。
+
 该 router 在 ``app.main`` 中以 ``prefix="/api/v1"`` 注册。
 """
 

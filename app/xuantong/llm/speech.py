@@ -91,7 +91,7 @@ class SpeechService:
             return TranscriptionResult(
                 text=response.content,
                 language=hints[0] if hints else "zh",
-                confidence=0.9,  # ASR 模型通常不返回置信度，给默认值
+                confidence=0.9,  # 占位值：qwen3-asr-flash 不返回置信度；保持 float 以兼容前端契约
                 raw_response=response.content,
             )
         except Exception as e:
@@ -148,7 +148,7 @@ class SpeechService:
             return TranscriptionResult(
                 text=text,
                 language="zh",
-                confidence=0.85,
+                confidence=0.85,  # 占位值：上游未返回置信度；保持 float 以兼容前端契约
                 emotion=emotion,
                 raw_response=text,
             )

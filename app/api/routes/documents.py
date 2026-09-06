@@ -10,7 +10,10 @@
 （见 :mod:`app.api.routes.multimodal`）。本路由只负责存储与元数据 CRUD。
 
 存储：
-- 元数据当前由进程内单例承载（开发/测试阶段），生产可替换为数据库表；
+- 元数据**优先落库**（``app.state.session_factory`` 存在时经
+  :class:`app.services.db.document.DbDocumentService` 持久化，重启不丢失）；
+  无数据库时优雅降级为进程内单例 ``_DOCUMENTS``（仅供开发/测试兜底，
+  生产必须配置 ``DATABASE_URL``，否则重启会丢失元数据）；
 - 文件字节经 :class:`app.services.storage.SupabaseStorageClient` 存入对象存储，
   未配置云存储时优雅降级为本地占位路径，绝不影响接口可用性。
 
@@ -28,6 +31,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Upload
 
 from app.config import Settings
 from app.services.storage import get_storage_client
+from app.database.engine import get_db_context
 from app.api.routes.multimodal import _parse_request, _resolve_media
 
 logger = logging.getLogger(__name__)
@@ -37,12 +41,14 @@ router = APIRouter(tags=["documents"])
 settings = Settings()
 
 
-# ── 文档元数据内存存储（开发/测试阶段单例）────────────────────────────────────
+# ── 文档元数据内存存储（无 DB 时的降级兜底单例）──────────────────────────────
+# 生产/默认 SQLite 配置下 session_factory 恒存在，走数据库持久化；
+# 仅当 app.state.session_factory 缺失（极少数纯内存测试场景）时才用此单例。
 _DOCUMENTS: dict[str, dict[str, Any]] = {}
 
 
 def reset_documents() -> None:
-    """清空文档元数据存储（测试隔离用）。"""
+    """清空文档元数据内存存储（测试隔离用）。"""
     _DOCUMENTS.clear()
 
 
@@ -54,16 +60,33 @@ def _storage_client():
     return get_storage_client(settings)
 
 
+def _session_factory(request: Request):
+    """从 app.state 获取数据库会话工厂；缺失返回 None（触发内存降级）。"""
+    return getattr(request.app.state, "session_factory", None)
+
+
+async def _load_record(request: Request, document_id: str) -> dict[str, Any] | None:
+    """按 document_id 加载文档元数据（优先 DB，降级内存）；未命中返回 None。"""
+    session_factory = _session_factory(request)
+    if session_factory is not None:
+        from app.services.db import DbDocumentService
+
+        async with get_db_context(session_factory) as db:
+            return await DbDocumentService(db).get_document(document_id)
+    return _DOCUMENTS.get(document_id)
+
+
 # ── 上传 ─────────────────────────────────────────────────────────────────────
 
 
 @router.post("/documents", status_code=201)
 async def upload_document(
+    request: Request,
     file: UploadFile = File(..., description="上传的文档/图片文件"),
     patient_id: str = Form(..., description="所属患者标识"),
     doc_type: str = Form("general", description="文档类型，如 lab_report/prescription/image"),
 ) -> dict[str, Any]:
-    """上传文档：保存文件字节到对象存储，并登记元数据。
+    """上传文档：保存文件字节到对象存储，并登记元数据（优先落库）。
 
     存储路径规则：``{patient_id}/{document_id}/{file_name}``。
     """
@@ -77,7 +100,8 @@ async def upload_document(
     document_id = str(uuid4())
     file_name = file.filename or f"{document_id}.bin"
     content_type = file.content_type or "application/octet-stream"
-    storage_path = f"{patient_id.strip()}/{document_id}/{file_name}"
+    pid = patient_id.strip()
+    storage_path = f"{pid}/{document_id}/{file_name}"
 
     # 对象存储上传（未配置云存储时降级为本地占位路径，不阻断）
     client = _storage_client()
@@ -87,18 +111,36 @@ async def upload_document(
         logger.warning("documents: 对象存储上传失败，降级登记元数据: %s", e)
         stored_path = storage_path
 
-    record = {
-        "document_id": document_id,
-        "id": document_id,
-        "patient_id": patient_id.strip(),
-        "doc_type": doc_type,
-        "file_name": file_name,
-        "file_size": len(content),
-        "content_type": content_type,
-        "storage_path": stored_path,
-        "created_at": _now_iso(),
-    }
-    _DOCUMENTS[document_id] = record
+    session_factory = _session_factory(request)
+    if session_factory is not None:
+        # 数据库持久化（重启不丢失）
+        from app.services.db import DbDocumentService
+
+        async with get_db_context(session_factory) as db:
+            record = await DbDocumentService(db).create_document(
+                document_id=document_id,
+                patient_id=pid,
+                doc_type=doc_type,
+                file_name=file_name,
+                file_size=len(content),
+                content_type=content_type,
+                storage_path=stored_path,
+            )
+    else:
+        # 无 DB 降级：内存单例兜底
+        record = {
+            "document_id": document_id,
+            "id": document_id,
+            "patient_id": pid,
+            "doc_type": doc_type,
+            "file_name": file_name,
+            "file_size": len(content),
+            "content_type": content_type,
+            "storage_path": stored_path,
+            "created_at": _now_iso(),
+        }
+        _DOCUMENTS[document_id] = record
+
     logger.info("documents: 已登记文档 %s (%s, %d bytes)", document_id, doc_type, len(content))
     return dict(record)
 
@@ -108,14 +150,30 @@ async def upload_document(
 
 @router.get("/documents")
 async def list_documents(
+    request: Request,
     patient_id: str = Query(..., description="按患者过滤"),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
 ) -> dict[str, Any]:
     """按患者分页列出文档元数据（新→旧）。"""
-    matched = [
-        d for d in _DOCUMENTS.values() if d["patient_id"] == patient_id.strip()
-    ]
+    pid = patient_id.strip()
+    session_factory = _session_factory(request)
+    if session_factory is not None:
+        from app.services.db import DbDocumentService
+
+        async with get_db_context(session_factory) as db:
+            page_items, total = await DbDocumentService(db).list_documents(
+                pid, page=page, size=size
+            )
+        return {
+            "documents": [dict(d) for d in page_items],
+            "total": total,
+            "page": page,
+            "size": size,
+        }
+
+    # 无 DB 降级：内存单例
+    matched = [d for d in _DOCUMENTS.values() if d["patient_id"] == pid]
     matched.sort(key=lambda d: d.get("created_at") or "", reverse=True)
 
     total = len(matched)
@@ -136,11 +194,12 @@ async def list_documents(
 
 @router.get("/documents/{document_id}/presign")
 async def presign_document(
+    request: Request,
     document_id: str,
     expires_in: int = Query(None, ge=1, le=86400, description="URL 有效期（秒）"),
 ) -> dict[str, Any]:
     """生成文档对象的预签名下载 URL。"""
-    record = _DOCUMENTS.get(document_id)
+    record = await _load_record(request, document_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -164,11 +223,20 @@ async def presign_document(
 
 
 @router.delete("/documents/{document_id}")
-async def delete_document(document_id: str) -> dict[str, Any]:
-    """删除文档：移除元数据并尽力删除对象存储中的文件。"""
-    record = _DOCUMENTS.pop(document_id, None)
+async def delete_document(request: Request, document_id: str) -> dict[str, Any]:
+    """删除文档：移除元数据（DB 软删除 / 内存移除）并尽力删除对象存储中的文件。"""
+    record = await _load_record(request, document_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    session_factory = _session_factory(request)
+    if session_factory is not None:
+        from app.services.db import DbDocumentService
+
+        async with get_db_context(session_factory) as db:
+            await DbDocumentService(db).delete_document(document_id)
+    else:
+        _DOCUMENTS.pop(document_id, None)
 
     client = _storage_client()
     try:

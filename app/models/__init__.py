@@ -17,6 +17,7 @@ from app.models.agent_run import AgentRun
 from app.models.workflow_run import WorkflowRun
 from app.models.audit_log import AuditLog
 from app.models.chat_message import ChatMessage
+from app.models.document import Document
 
 __all__ = [
     "User",
@@ -38,4 +39,5 @@ __all__ = [
     "WorkflowRun",
     "AuditLog",
     "ChatMessage",
+    "Document",
 ]

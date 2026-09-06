@@ -44,14 +44,28 @@ class XuantongError(Exception):
         super().__init__(self.message)
 
     def to_dict(self) -> dict[str, Any]:
-        """序列化为统一错误响应体（不含 HTTP 状态码）。"""
+        """序列化为统一错误响应体（不含 HTTP 状态码）。
+
+        采取**兼容叠加**策略，同时输出：
+        - 顶层 ``detail``（人读消息字符串），供仅读 detail 的老客户端使用；
+        - 顶层 ``error`` 结构，内含 ``code`` / ``message``，并统一同时给出
+          ``detail``（单数场景）与 ``details``（恒为数组），避免客户端猜键名。
+        """
+        details: list[Any]
+        if self.detail is None:
+            details = []
+        elif isinstance(self.detail, list):
+            details = self.detail
+        else:
+            details = [self.detail]
+
         error: dict[str, Any] = {
             "code": self.code,
             "message": self.message,
+            "detail": self.detail if self.detail is not None else self.message,
+            "details": details,
         }
-        if self.detail is not None:
-            error["detail"] = self.detail
-        return {"error": error}
+        return {"detail": self.message, "error": error}
 
     def __repr__(self) -> str:  # pragma: no cover - 调试辅助
         return (

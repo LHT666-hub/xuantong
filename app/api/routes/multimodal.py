@@ -29,6 +29,61 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["multimodal"])
 
 
+# ── 音频时长解析（手写 WAV RIFF header，无第三方依赖）──────────────────────────
+
+
+def _wav_duration_ms(data: bytes | None) -> int:
+    """从 WAV 字节解析音频时长（毫秒）。
+
+    仅解析标准 RIFF/WAVE 容器：读取 ``fmt `` 块中的 byte rate，再定位 ``data``
+    块大小，时长 = data_size / byte_rate。采用逐块游走以兼容 fmt 与 data 之间
+    存在 LIST 等附加块的非 44 字节标准头布局。**不引入** mutagen/pydub/ffmpeg。
+
+    非 WAV 格式（mp3/m4a/ogg 等）无法在此解析，返回 0，由调用方保持占位。
+    """
+    if not data or len(data) < 44:
+        return 0
+    if data[0:4] != b"RIFF" or data[8:12] != b"WAVE":
+        return 0
+
+    byte_rate = int.from_bytes(data[28:32], "little")
+    if byte_rate <= 0:
+        return 0
+
+    # 逐块游走定位 data 块（块以偶数字节对齐）
+    pos = 12
+    data_size: int | None = None
+    while pos + 8 <= len(data):
+        chunk_id = data[pos:pos + 4]
+        chunk_size = int.from_bytes(data[pos + 4:pos + 8], "little")
+        if chunk_id == b"data":
+            data_size = chunk_size
+            break
+        pos += 8 + chunk_size + (chunk_size & 1)
+
+    if data_size is None:
+        # 未找到显式 data 块：以标准 44 字节头之后的剩余字节兜底估算
+        data_size = max(0, len(data) - 44)
+    if data_size <= 0:
+        return 0
+    return int(data_size / byte_rate * 1000)
+
+
+def _audio_bytes_from(file_bytes: bytes | None, audio: str) -> bytes | None:
+    """尽力取得音频原始字节：优先上传文件，其次 data URI 中的 base64。
+
+    纯远程 URL（http/https）无法在本地取得字节，返回 None（时长保持 0）。
+    """
+    if file_bytes:
+        return file_bytes
+    if isinstance(audio, str) and audio.startswith("data:") and ";base64," in audio:
+        try:
+            return base64.b64decode(audio.split(";base64,", 1)[1])
+        except (binascii.Error, ValueError):
+            return None
+    return None
+
+
 # ── 服务懒加载（conftest/测试环境可能未预置多模态服务）────────────────────────
 
 
@@ -180,10 +235,17 @@ async def speech_transcribe(request: Request) -> dict:
         logger.error("speech/transcribe: 转写失败: %s", e)
         raise HTTPException(status_code=502, detail=f"语音转写失败: {e}")
 
+    # duration_ms 真实计算：从音频字节解析 WAV 时长（非 WAV / 远程 URL 无法解析时保持 0）。
+    # 上游 ASR（qwen3-asr-flash）不返回时长，故在网关侧根据上传字节自行推算。
+    parsed_ms = _wav_duration_ms(_audio_bytes_from(file_bytes, audio))
+    duration_ms = parsed_ms or result.duration_ms
+
     return {
         "text": result.text,
         "language": result.language,
-        "duration_ms": result.duration_ms,
+        "duration_ms": duration_ms,
+        # confidence 为占位值：上游 ASR 未返回真实置信度。保持 float 类型以兼容
+        # iOS 端现有解码契约（改为 Optional[null] 会变更字段类型，属破坏性变更）。
         "confidence": result.confidence,
         "emotion": result.emotion,
     }

@@ -34,9 +34,24 @@ def test_family_doctor_is_consultation():
     assert fd.implemented == True
 
 
-def test_tcm_not_implemented():
+def test_tcm_implemented():
     llm = LLMRuntime(MockProvider())
     register_all_agents(llm)
     tcm = AgentRegistry.get("tcm")
     assert tcm is not None
-    assert tcm.implemented == False
+    assert tcm.implemented == True
+
+
+def test_nutrition_and_rehabilitation_implemented():
+    llm = LLMRuntime(MockProvider())
+    register_all_agents(llm)
+    nutrition = AgentRegistry.get("nutrition")
+    rehab = AgentRegistry.get("rehabilitation")
+    assert nutrition is not None and nutrition.implemented == True
+    assert rehab is not None and rehab.implemented == True
+
+
+def test_all_8_agents_implemented():
+    llm = LLMRuntime(MockProvider())
+    register_all_agents(llm)
+    assert len(AgentRegistry.list_implemented()) == 8
