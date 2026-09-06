@@ -88,8 +88,11 @@ class DbEventService:
         if event is None:
             return None
 
-        # 更新状态和工作流结果（存储在 metadata 中）
-        metadata = event.metadata_ or {}
+        # 更新状态和工作流结果（存储在 metadata 中）。
+        # 注意：SQLAlchemy 普通 JSON 列不追踪原地 mutation —— 若取出同一 dict
+        # 引用改 key 后再赋回，History 用 == 比对会判定「无变化」而不发 UPDATE。
+        # 因此必须构造一个**新 dict** 赋值，才能触发脏检查与持久化。
+        metadata = dict(event.metadata_ or {})
         metadata["status"] = status
         if workflow_result is not None:
             metadata["workflow"] = workflow_result
