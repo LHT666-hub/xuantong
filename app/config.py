@@ -49,6 +49,17 @@ class Settings(BaseSettings):
         "assistant": "execution",
     }
 
+    # Novita AI 医疗模型（Ling 3.0 Flash Santé）
+    novita_api_key: str = ""
+    novita_base_url: str = "https://api.novita.ai/openai"
+    medical_model_id: str = "inclusional/ling-3.0-flash-sante"
+    use_medical_model: bool = True
+
+    # 医疗 Agent 列表 —— 这些 Agent 优先走 Novita Ling 3.0
+    medical_agents: list[str] = [
+        "family_doctor", "tcm", "nutrition", "rehabilitation",
+    ]
+
     # RAG 配置
     rag_enabled: bool = True
     rag_max_retries: int = 3
@@ -95,6 +106,10 @@ class Settings(BaseSettings):
         """根据 Agent 角色获取对应模型名称"""
         tier = self.llm_agent_model_map.get(agent_role, "execution")
         return self.get_model_for_tier(tier)
+
+    def is_medical_agent(self, agent_role: str) -> bool:
+        """判断 Agent 是否属于医疗类（优先走 Ling 3.0）"""
+        return agent_role in self.medical_agents
 
     def get_timeout_for_tier(self, tier: str) -> float:
         """根据模型层级获取超时时间（秒）。

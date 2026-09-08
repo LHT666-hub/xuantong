@@ -14,6 +14,7 @@ from app.database.engine import create_db_engine, create_session_factory
 from app.database.base import Base
 from app.xuantong.llm.mock import MockProvider
 from app.xuantong.llm.qwen import QwenProvider
+from app.xuantong.llm.novita import NovitaProvider
 from app.xuantong.llm.runtime import LLMRuntime
 from app.xuantong.llm.vision import VisionService
 from app.xuantong.llm.speech import SpeechService
@@ -174,13 +175,31 @@ async def lifespan(app: FastAPI):
         provider = MockProvider()
         logger.info("LLM Provider: Mock (测试模式)")
 
-    # LLM Runtime（多模型分层路由 + 超时 + 指数退避重试）
+    # Novita AI 医疗模型（Ling 3.0 Flash Santé）
+    medical_provider = None
+    if settings.use_medical_model and settings.novita_api_key:
+        medical_provider = NovitaProvider(
+            api_key=settings.novita_api_key,
+            base_url=settings.novita_base_url,
+            default_model=settings.medical_model_id,
+        )
+        logger.info(
+            f"Novita 医疗模型已启用: {settings.medical_model_id}, "
+            f"医疗 Agent: {settings.medical_agents}"
+        )
+    elif settings.use_medical_model and not settings.novita_api_key:
+        logger.warning("Novita 医疗模型已配置启用但 NOVITA_API_KEY 为空，降级为 Qwen")
+    else:
+        logger.info("Novita 医疗模型已通过配置禁用 (use_medical_model=False)")
+
+    # LLM Runtime（多模型分层路由 + 超时 + 指数退避重试 + 医疗模型路由）
     app.state.llm_runtime = LLMRuntime(
         provider=provider,
         max_retries=settings.llm_max_retries,
         timeout_seconds=settings.llm_timeout,
         retry_base_delay=settings.llm_retry_base_delay,
         settings=settings,
+        medical_provider=medical_provider,
     )
 
     # 多模态服务

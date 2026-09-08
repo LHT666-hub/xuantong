@@ -5,6 +5,7 @@ from app.xuantong.llm.runtime import LLMRuntime
 from app.xuantong.llm.mock import MockProvider
 from app.xuantong.llm.qwen import QwenProvider
 from app.xuantong.llm.deepseek import DeepSeekProvider
+from app.xuantong.llm.novita import NovitaProvider
 from app.xuantong.llm.vision import VisionService, BPReading
 from app.xuantong.llm.speech import SpeechService, TranscriptionResult
 from app.xuantong.llm.message_adapter import (
@@ -19,7 +20,7 @@ __all__ = [
     # Runtime
     "LLMRuntime",
     # Providers
-    "MockProvider", "QwenProvider", "DeepSeekProvider",
+    "MockProvider", "QwenProvider", "DeepSeekProvider", "NovitaProvider",
     # 多模态服务
     "VisionService", "BPReading",
     "SpeechService", "TranscriptionResult",

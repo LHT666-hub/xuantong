@@ -31,14 +31,17 @@ class LLMRuntime:
         timeout_seconds: float = 60.0,
         retry_base_delay: float = 1.0,
         settings=None,
+        medical_provider: ModelProvider | None = None,
     ):
         self.provider = provider
+        self.medical_provider = medical_provider  # Novita Ling 3.0（可选）
         self.max_retries = max_retries
         self.timeout_seconds = timeout_seconds
         self.retry_base_delay = retry_base_delay
         self._settings = settings  # 可选的 Settings 实例，用于模型路由
         self._call_count = 0
         self._total_tokens = 0
+        self._medical_call_count = 0
 
     def _resolve_model(self, agent_role: str, model_id: str = "", model_tier: ModelTier | None = None) -> str:
         """解析最终使用的模型名称。
@@ -56,6 +59,17 @@ class LLMRuntime:
 
         # fallback: 使用 provider 默认模型
         return ""
+
+    def _select_provider(self, agent_role: str) -> "ModelProvider":
+        """根据 agent_role 选择 provider：医疗 Agent 优先走 Novita，其他走 Qwen。"""
+        if (
+            self.medical_provider is not None
+            and self._settings
+            and self._settings.use_medical_model
+            and self._settings.is_medical_agent(agent_role)
+        ):
+            return self.medical_provider
+        return self.provider
 
     async def invoke(
         self,
@@ -93,7 +107,17 @@ class LLMRuntime:
             metadata=kwargs,
         )
 
-        return await self._execute_with_retry(request, agent_role)
+        selected = self._select_provider(agent_role)
+        try:
+            return await self._execute_with_retry(request, agent_role, provider=selected)
+        except Exception:
+            # 医疗 Provider 失败时回退到主 Provider（Qwen）
+            if selected is self.medical_provider:
+                logger.warning(
+                    "Novita 医疗模型调用失败，回退到 Qwen: agent=%s", agent_role
+                )
+                return await self._execute_with_retry(request, agent_role, provider=self.provider)
+            raise
 
     async def invoke_with_vision(
         self,
@@ -147,7 +171,7 @@ class LLMRuntime:
             metadata=kwargs,
         )
 
-        return await self._execute_with_retry(request, agent_role)
+        return await self._execute_with_retry(request, agent_role, provider=self.provider)
 
     async def invoke_with_speech(
         self,
@@ -194,7 +218,7 @@ class LLMRuntime:
             metadata=kwargs,
         )
 
-        return await self._execute_with_retry(request, "asr")
+        return await self._execute_with_retry(request, agent_role, provider=self.provider)
 
     async def stream(
         self,
@@ -221,7 +245,8 @@ class LLMRuntime:
             metadata=kwargs,
         )
 
-        async for chunk in self.provider.stream(request):
+        active_provider = self._select_provider(agent_role)
+        async for chunk in active_provider.stream(request):
             yield chunk
 
     def _resolve_timeout(self, request: ModelRequest) -> float:
@@ -235,8 +260,10 @@ class LLMRuntime:
                 return float(self._settings.get_timeout_for_tier(tier))
         return self.timeout_seconds
 
-    async def _execute_with_retry(self, request: ModelRequest, agent_role: str) -> ModelResponse:
+    async def _execute_with_retry(self, request: ModelRequest, agent_role: str, provider: "ModelProvider | None" = None) -> ModelResponse:
         """带超时和指数退避重试的执行逻辑"""
+        if provider is None:
+            provider = self.provider
         last_error = None
         timeout = self._resolve_timeout(request)
 
@@ -246,7 +273,7 @@ class LLMRuntime:
 
                 # 超时控制（按模型层级动态调整）
                 response = await asyncio.wait_for(
-                    self.provider.complete(request),
+                    provider.complete(request),
                     timeout=timeout,
                 )
 
@@ -254,6 +281,8 @@ class LLMRuntime:
                 response.elapsed_ms = elapsed
 
                 self._call_count += 1
+                if provider is self.medical_provider:
+                    self._medical_call_count += 1
                 self._total_tokens += response.prompt_tokens + response.completion_tokens
 
                 logger.info(
@@ -288,12 +317,22 @@ class LLMRuntime:
         )
 
     async def health(self) -> dict:
-        """检查 Provider 健康状态"""
+        """检查 Provider 健康状态（含 Novita 医疗模型）"""
         h = await self.provider.health()
-        return {
+        result = {
             "provider": h.provider,
             "healthy": h.healthy,
             "message": h.message,
             "total_calls": self._call_count,
             "total_tokens": self._total_tokens,
         }
+        # Novita 医疗模型健康状态
+        if self.medical_provider is not None:
+            mh = await self.medical_provider.health()
+            result["medical_provider"] = {
+                "provider": mh.provider,
+                "healthy": mh.healthy,
+                "message": mh.message,
+                "medical_calls": self._medical_call_count,
+            }
+        return result
