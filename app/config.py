@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     # Novita AI 医疗模型（Ling 3.0 Flash Santé）
     novita_api_key: str = ""
     novita_base_url: str = "https://api.novita.ai/openai"
-    medical_model_id: str = "inclusional/ling-3.0-flash-sante"
+    medical_model_id: str = "inclusionai/ling-3.0-flash-sante"
     use_medical_model: bool = True
 
     # 医疗 Agent 列表 —— 这些 Agent 优先走 Novita Ling 3.0

@@ -24,7 +24,7 @@ class NovitaProvider:
         self,
         api_key: str = "",
         base_url: str = "",
-        default_model: str = "inclusional/ling-3.0-flash-sante",
+        default_model: str = "inclusionai/ling-3.0-flash-sante",
     ):
         self._api_key = api_key
         self._base_url = base_url or "https://api.novita.ai/openai"
