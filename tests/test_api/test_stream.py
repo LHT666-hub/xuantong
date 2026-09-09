@@ -19,6 +19,7 @@ from app.services.chat_service import reset_chat_service
 from app.services.progress_hub import progress_hub
 from app.services.store import get_store
 from app.api.routes.stream import _references_used_in_reply
+from app.services.ruomu import RuomuEvidence
 
 EVENTS_URL = "/api/events"
 CHAT_STREAM_URL = "/api/v1/chat/stream"
@@ -39,6 +40,15 @@ def test_retrieved_references_are_exposed_with_honest_citation_state():
         item["cited"] is False
         for item in _references_used_in_reply("没有实际引用。", references)
     )
+
+
+def test_ruomu_only_runs_for_evidence_intent_without_sensitive_payload():
+    from app.api.routes.stream import _should_use_ruomu
+
+    assert _should_use_ruomu("请查一下最新高血压指南") is True
+    assert _should_use_ruomu("我今天有一点头晕") is False
+    assert _should_use_ruomu("请查最新资料，手机号13800138000") is False
+    assert _should_use_ruomu("附件：检查报告全文") is False
 
 
 def _event_stream_url(event_id: str) -> str:
@@ -208,6 +218,41 @@ async def test_sse_chat_stream():
         assert "".join(m["chunk"] for m in chunks).strip() == final["reply"].strip()
         assert final["agent_role"] == "family_doctor"
         assert final["session_id"]
+
+
+@pytest.mark.asyncio
+async def test_sse_chat_uses_ruomu_as_evidence_not_final_speaker():
+    class FakeRuomu:
+        async def retrieve(self, prompt, history=None):
+            assert prompt == "高血压最新健康教育资料"
+            return RuomuEvidence(
+                brief="若木检索摘要",
+                request_id="ruomu-request-1",
+                sources=[
+                    {
+                        "siteName": "WHO",
+                        "title": "HEARTS 技术包",
+                        "url": "https://www.who.int/example",
+                    }
+                ],
+            )
+
+    original = getattr(app.state, "ruomu_service", None)
+    app.state.ruomu_service = FakeRuomu()
+    try:
+        async with _client() as client:
+            resp = await client.post(
+                CHAT_STREAM_URL, json={"message": "高血压最新健康教育资料"}
+            )
+    finally:
+        app.state.ruomu_service = original
+
+    _, named_events = _parse_sse(resp.text)
+    final = [payload for name, payload in named_events if name == "complete"][0]
+    assert final["agent_role"] == "family_doctor"
+    assert final["metadata"]["ruomu_request_id"] == "ruomu-request-1"
+    ruomu_reference = next(ref for ref in final["references"] if ref["source"] == "WHO")
+    assert ruomu_reference["url"] == "https://www.who.int/example"
 
 
 @pytest.mark.asyncio

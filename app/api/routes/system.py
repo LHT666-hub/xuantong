@@ -18,7 +18,7 @@ async def health_detail(request: Request):
     """详细健康检查（含 LLM / Agent 状态）"""
     llm_health = await request.app.state.llm_runtime.health()
     agents = AgentRegistry.list_all()
-    return {
+    result = {
         "app": {"status": "ok", "version": "0.1.0"},
         "llm": llm_health,
         "agents": {
@@ -26,3 +26,12 @@ async def health_detail(request: Request):
             "implemented": len([a for a in agents if a.implemented]),
         },
     }
+    ruomu = getattr(request.app.state, "ruomu_service", None)
+    result["knowledge"] = {
+        "ruomu": {
+            "enabled": ruomu is not None,
+            "healthy": await ruomu.health() if ruomu is not None else None,
+            "role": "evidence_retrieval",
+        }
+    }
+    return result

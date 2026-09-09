@@ -18,6 +18,7 @@ from app.xuantong.llm.novita import NovitaProvider
 from app.xuantong.llm.runtime import LLMRuntime
 from app.xuantong.llm.vision import VisionService
 from app.xuantong.llm.speech import SpeechService
+from app.services.ruomu import RuomuKnowledgeService
 from app.xuantong.agents import register_all_agents
 from app.xuantong.runtime.registry import AgentRegistry
 from app.xuantong.safety import (
@@ -207,6 +208,18 @@ async def lifespan(app: FastAPI):
     app.state.speech_service = SpeechService(app.state.llm_runtime)
     logger.info("多模态服务已初始化: VisionService, SpeechService")
 
+    # 若木只提供知识库/联网证据，最终回答仍由玄同模型生成。
+    app.state.ruomu_service = None
+    if settings.ruomu_enabled and settings.ruomu_access_key:
+        app.state.ruomu_service = RuomuKnowledgeService(
+            base_url=settings.ruomu_base_url,
+            access_key=settings.ruomu_access_key,
+            timeout=settings.ruomu_timeout,
+        )
+        logger.info("若木 D 模式证据服务已启用")
+    elif settings.ruomu_enabled:
+        logger.warning("若木已配置启用但 RUOMU_ACCESS_KEY 为空，跳过外部证据检索")
+
     # 注册所有 Agent
     register_all_agents(app.state.llm_runtime)
     app.state.agents = AgentRegistry
@@ -263,6 +276,8 @@ async def lifespan(app: FastAPI):
     logger.info("玄同 Xuantong 关闭中...")
     if getattr(app.state, "checkpoint_close", None) is not None:
         await app.state.checkpoint_close()
+    if getattr(app.state, "ruomu_service", None) is not None:
+        await app.state.ruomu_service.close()
     if hasattr(app.state, 'db_engine'):
         await app.state.db_engine.dispose()
 
