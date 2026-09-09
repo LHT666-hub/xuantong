@@ -18,11 +18,24 @@ from app.main import app
 from app.services.chat_service import reset_chat_service
 from app.services.progress_hub import progress_hub
 from app.services.store import get_store
+from app.api.routes.stream import _references_used_in_reply
 
 EVENTS_URL = "/api/events"
 CHAT_STREAM_URL = "/api/v1/chat/stream"
 
 PATIENT_ID = "patient-stream-001"
+
+
+def test_only_references_cited_in_final_reply_are_exposed():
+    references = [
+        {"id": "ref-1", "title": "one"},
+        {"id": "ref-2", "title": "two"},
+        {"id": "ref-3", "title": "three"},
+    ]
+    assert _references_used_in_reply("第一条[1]，第三条[3]。", references) == [
+        references[0], references[2]
+    ]
+    assert _references_used_in_reply("没有实际引用。", references) == []
 
 
 def _event_stream_url(event_id: str) -> str:

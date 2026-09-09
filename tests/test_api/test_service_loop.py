@@ -87,6 +87,8 @@ async def test_full_service_loop(scripted_workflow):
         assert body["workflow"]["clinical_risk"] == "red"
         task_ids = body["task_ids"]
         assert len(task_ids) >= 1
+        assert [task["id"] for task in body["tasks"]] == task_ids
+        assert all(task["title"] for task in body["tasks"])
 
         # 2) 查询患者任务列表
         resp = await client.get("/api/tasks", params={"patient_id": PATIENT_ID})

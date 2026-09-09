@@ -71,6 +71,27 @@ class LLMRuntime:
             return self.medical_provider
         return self.provider
 
+    def _resolve_request_model(
+        self,
+        agent_role: str,
+        provider: "ModelProvider",
+        model_id: str = "",
+        model_tier: ModelTier | None = None,
+    ) -> str:
+        """Resolve a model name that belongs to the selected provider.
+
+        Agent routing and model routing must move together.  Previously a
+        medical agent selected Novita but kept the Qwen model name resolved
+        from ``llm_agent_model_map``; Novita correctly rejected that request.
+        Explicit ``model_id`` still wins for callers that intentionally pin a
+        provider-specific model.
+        """
+        if model_id:
+            return model_id
+        if provider is self.medical_provider and self._settings:
+            return self._settings.medical_model_id
+        return self._resolve_model(agent_role, model_id, model_tier)
+
     async def invoke(
         self,
         agent_role: str,
@@ -94,7 +115,10 @@ class LLMRuntime:
             extra_body: Qwen 私有参数，如 {"enable_thinking": True}
             **kwargs: 附加元数据
         """
-        resolved_model = self._resolve_model(agent_role, model_id, model_tier)
+        selected = self._select_provider(agent_role)
+        resolved_model = self._resolve_request_model(
+            agent_role, selected, model_id, model_tier
+        )
 
         request = ModelRequest(
             model_id=resolved_model,
@@ -107,7 +131,6 @@ class LLMRuntime:
             metadata=kwargs,
         )
 
-        selected = self._select_provider(agent_role)
         try:
             return await self._execute_with_retry(request, agent_role, provider=selected)
         except Exception:
@@ -116,7 +139,16 @@ class LLMRuntime:
                 logger.warning(
                     "Novita 医疗模型调用失败，回退到 Qwen: agent=%s", agent_role
                 )
-                return await self._execute_with_retry(request, agent_role, provider=self.provider)
+                fallback_request = request.model_copy(
+                    update={
+                        "model_id": self._resolve_model(
+                            agent_role, model_id, model_tier
+                        )
+                    }
+                )
+                return await self._execute_with_retry(
+                    fallback_request, agent_role, provider=self.provider
+                )
             raise
 
     async def invoke_with_vision(
@@ -232,7 +264,10 @@ class LLMRuntime:
         **kwargs,
     ) -> AsyncIterator[StreamChunk]:
         """流式调用模型"""
-        resolved_model = self._resolve_model(agent_role, model_id, model_tier)
+        active_provider = self._select_provider(agent_role)
+        resolved_model = self._resolve_request_model(
+            agent_role, active_provider, model_id, model_tier
+        )
 
         request = ModelRequest(
             model_id=resolved_model,
@@ -245,7 +280,6 @@ class LLMRuntime:
             metadata=kwargs,
         )
 
-        active_provider = self._select_provider(agent_role)
         async for chunk in active_provider.stream(request):
             yield chunk
 

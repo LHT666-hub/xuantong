@@ -10,7 +10,7 @@ class ModelTier(str, Enum):
     SPECIALIST = "specialist"  # 专科Agent：1M上下文+FC（qwen-plus）
     EXECUTION = "execution"    # 执行Agent：低成本+FC（qwen-flash）
     VISION = "vision"          # 视觉识别（qwen3-vl-flash）
-    OCR = "ocr"                # OCR（qwen-vl-ocr）
+    OCR = "ocr"                # OCR（qwen3.5-ocr）
     ASR = "asr"                # 语音识别（qwen3-asr-flash）
 
 
