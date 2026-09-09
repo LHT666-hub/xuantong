@@ -78,6 +78,36 @@ async def get_task(request: Request, task_id: str):
     return {"task": task}
 
 
+@router.post("/{task_id}/accept")
+async def accept_proposed_task(request: Request, task_id: str):
+    """患者确认一项建议后，将 proposed 工单激活为 pending。"""
+    session_factory = _get_db_session(request)
+
+    if session_factory is not None:
+        from app.database.engine import get_db_context
+        from app.services.db import DbTaskService
+
+        async with get_db_context(session_factory) as db:
+            service = DbTaskService(db)
+            current = await service.get_task(task_id)
+            if current is None:
+                raise HTTPException(status_code=404, detail="Task not found")
+            if current.get("status") != "proposed":
+                raise HTTPException(status_code=409, detail="Task is not awaiting patient confirmation")
+            task = await service.update_task_status(task_id, "pending")
+            await db.commit()
+    else:
+        service = TaskService()
+        current = await service.get_task(task_id)
+        if current is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+        if current.get("status") != "proposed":
+            raise HTTPException(status_code=409, detail="Task is not awaiting patient confirmation")
+        task = await service.update_task_status(task_id, "pending")
+
+    return {"status": "accepted", "task": task}
+
+
 @router.post("/{task_id}/complete")
 async def complete_task(request: Request, task_id: str, body: TaskCompleteRequest):
     """完成任务：更新状态 + 记录 ServiceOutcome + 写入 Timeline。"""

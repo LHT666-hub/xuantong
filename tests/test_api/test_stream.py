@@ -26,16 +26,19 @@ CHAT_STREAM_URL = "/api/v1/chat/stream"
 PATIENT_ID = "patient-stream-001"
 
 
-def test_only_references_cited_in_final_reply_are_exposed():
+def test_retrieved_references_are_exposed_with_honest_citation_state():
     references = [
         {"id": "ref-1", "title": "one"},
         {"id": "ref-2", "title": "two"},
         {"id": "ref-3", "title": "three"},
     ]
-    assert _references_used_in_reply("第一条[1]，第三条[3]。", references) == [
-        references[0], references[2]
-    ]
-    assert _references_used_in_reply("没有实际引用。", references) == []
+    marked = _references_used_in_reply("第一条[1]，第三条[3]。", references)
+    assert [item["cited"] for item in marked] == [True, False, True]
+    assert [item["title"] for item in marked] == ["one", "two", "three"]
+    assert all(
+        item["cited"] is False
+        for item in _references_used_in_reply("没有实际引用。", references)
+    )
 
 
 def _event_stream_url(event_id: str) -> str:

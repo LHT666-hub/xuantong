@@ -691,9 +691,20 @@ class WorkflowNodes:
         """将 ActionPlan.actions 转为任务清单（Phase 2 暂不落地数据库）。"""
         plan = state.get("action_plan")
         requires_human = bool(state.get("human_required"))
+        # 会改变患者日程或触发后续服务的动作必须先由患者确认。
+        # 健康教育等只读内容可以直接记录；人工审核事项仍优先进入 pending_human。
+        patient_consent_types = {
+            "followup",
+            "monitoring",
+            "medication_review",
+            "referral",
+            "appointment",
+            "reminder",
+        }
         tasks: list[dict[str, Any]] = []
         if plan is not None:
             for item in plan.actions:
+                needs_consent = item.type in patient_consent_types
                 tasks.append(
                     {
                         "id": f"task-{uuid4().hex[:12]}",
@@ -702,7 +713,13 @@ class WorkflowNodes:
                         "assignee_role": item.assignee_role or "assistant",
                         "priority": item.priority,
                         "deadline_hours": item.deadline_hours,
-                        "status": "pending_human" if requires_human else "pending",
+                        "status": (
+                            "pending_human"
+                            if requires_human
+                            else "proposed"
+                            if needs_consent
+                            else "pending"
+                        ),
                     }
                 )
         return {
