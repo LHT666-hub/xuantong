@@ -46,6 +46,7 @@ from app.api.routes.chat import (
 )
 from app.services.progress_hub import ProgressChannel, progress_hub
 from app.services.references import build_references
+from app.services.ruomu import RuomuEvidence
 
 logger = logging.getLogger(__name__)
 
@@ -295,6 +296,7 @@ def _build_chat_messages(
     payload: ChatRequest,
     message: str,
     references: list[dict[str, Any]] | None = None,
+    external_brief: str = "",
 ) -> list[dict]:
     """组装对话消息（system + 历史上下文 + 当前输入），与 POST /chat 一致。"""
     system_prompt = CHAT_SYSTEM_PROMPT
@@ -308,6 +310,13 @@ def _build_chat_messages(
             "必须在对应句末标注 [1]、[2] 这样的编号，并至少引用一条最相关资料。"
             "不得虚构编号或外部网址；资料不支持的内容不要强行引用。\n\n"
             + evidence
+        )
+    if external_brief:
+        system_prompt += (
+            "\n\n以下是若木通过医疗知识库与联网搜索生成的检索摘要。它只作为证据线索，"
+            "你仍需独立判断、保持患者安全边界，并结合上方编号资料生成最终回答；"
+            "不要声称自己就是若木，也不要照搬其诊断或处方性内容。\n\n"
+            + external_brief[:6000]
         )
     messages: list[dict] = [{"role": "system", "content": system_prompt}]
     for turn in payload.context or []:
@@ -343,6 +352,58 @@ async def _retrieve_chat_references(request: Request, message: str) -> list[dict
         [doc.content for doc in relevant],
         sum(doc.score for doc in relevant) / len(relevant) if relevant else 0.0,
     )
+
+
+def _should_use_ruomu(message: str) -> bool:
+    """仅为需要外部证据的问题启用若木，并拦截附件/明显身份标识。"""
+    if not message or len(message) > 1500 or "附件：" in message:
+        return False
+    if re.search(r"(?<!\d)1[3-9]\d{9}(?!\d)", message):
+        return False
+    if re.search(r"(?<!\d)\d{17}[\dXx](?!\d)", message):
+        return False
+    evidence_intents = (
+        "最新", "近期", "指南", "规范", "政策", "依据", "来源", "出处",
+        "研究", "论文", "文献", "资料", "证据", "科普", "联网", "搜索", "查一下",
+    )
+    return any(intent in message for intent in evidence_intents)
+
+
+async def _retrieve_ruomu_evidence(request: Request, payload: ChatRequest, message: str) -> RuomuEvidence:
+    service = getattr(request.app.state, "ruomu_service", None)
+    if service is None or not _should_use_ruomu(message):
+        return RuomuEvidence()
+    try:
+        return await service.retrieve(message, history=payload.context or [])
+    except Exception as exc:  # 外部检索不能阻断主回答
+        logger.warning("chat/stream: 若木证据检索失败，继续使用本地 RAG: %s", exc)
+        return RuomuEvidence()
+
+
+def _ruomu_references(evidence: RuomuEvidence, start: int) -> list[dict[str, Any]]:
+    references: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in evidence.sources:
+        title = str(item.get("title") or "若木检索资料").strip()
+        site = str(item.get("siteName") or "若木").strip()
+        raw_url = str(item.get("url") or "").strip()
+        url = raw_url if raw_url.startswith("https://") else None
+        identity = (title, url or site)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        references.append(
+            {
+                "id": f"ruomu-ref-{start + len(references)}",
+                "title": title,
+                "source": site,
+                "excerpt": "若木 D 模式检索到的相关资料，可结合正文查看。",
+                "evidence_score": None,
+                "kind": "web_source" if url else "ruomu_knowledge_base",
+                "url": url,
+            }
+        )
+    return references
 
 
 def _references_used_in_reply(
@@ -472,11 +533,20 @@ async def _chat_stream_generator(
         else:
             # 2) LLM 流式生成（真流式或模拟分块）
             llm_runtime = request.app.state.llm_runtime
-            references = await _retrieve_chat_references(request, message)
-            messages = _build_chat_messages(payload, message, references)
+            local_result, ruomu = await asyncio.gather(
+                _retrieve_chat_references(request, message),
+                _retrieve_ruomu_evidence(request, payload, message),
+            )
+            references = list(local_result)
+            references.extend(_ruomu_references(ruomu, len(references) + 1))
+            messages = _build_chat_messages(
+                payload, message, references, external_brief=ruomu.brief
+            )
             chunks, metadata = await _stream_llm_reply(llm_runtime, messages)
             metadata = dict(metadata or {})
             metadata["references"] = references
+            if ruomu.request_id:
+                metadata["ruomu_request_id"] = ruomu.request_id
             reply = "".join(chunks).strip() or _DEGRADED_REPLY
 
             # 3) 出站安全处置（OutputGuard 4 态）：改写/阻断时下发 guard 修正

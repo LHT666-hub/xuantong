@@ -60,6 +60,12 @@ class Settings(BaseSettings):
         "family_doctor", "tcm", "nutrition", "rehabilitation",
     ]
 
+    # 若木 D 模式：只作为外部知识库/联网证据层，最终回答仍由玄同选择的模型生成。
+    ruomu_enabled: bool = False
+    ruomu_base_url: str = "https://bailian-kb-chat.2947520194.workers.dev"
+    ruomu_access_key: str = ""
+    ruomu_timeout: float = 25.0
+
     # RAG 配置
     rag_enabled: bool = True
     rag_max_retries: int = 3
