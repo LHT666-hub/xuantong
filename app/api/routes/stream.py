@@ -45,6 +45,7 @@ from app.api.routes.chat import (
     _safe_add_message,
 )
 from app.services.progress_hub import ProgressChannel, progress_hub
+from app.services.references import build_references
 
 logger = logging.getLogger(__name__)
 
@@ -290,9 +291,24 @@ def _check_input_guard(request: Request, message: str) -> tuple[str, dict[str, A
     return message, None
 
 
-def _build_chat_messages(payload: ChatRequest, message: str) -> list[dict]:
+def _build_chat_messages(
+    payload: ChatRequest,
+    message: str,
+    references: list[dict[str, Any]] | None = None,
+) -> list[dict]:
     """组装对话消息（system + 历史上下文 + 当前输入），与 POST /chat 一致。"""
-    messages: list[dict] = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}]
+    system_prompt = CHAT_SYSTEM_PROMPT
+    if references:
+        evidence = "\n\n".join(
+            f"[{index}] {item['title']}\n{item['excerpt']}"
+            for index, item in enumerate(references, 1)
+        )
+        system_prompt += (
+            "\n\n以下是本次可用的玄同医学知识库资料。只在资料确实支持相关陈述时，"
+            "在该句末尾使用 [1]、[2] 这样的编号；不得虚构编号或外部网址。\n\n"
+            + evidence
+        )
+    messages: list[dict] = [{"role": "system", "content": system_prompt}]
     for turn in payload.context or []:
         role = turn.get("role")
         content = turn.get("content")
@@ -300,6 +316,40 @@ def _build_chat_messages(payload: ChatRequest, message: str) -> list[dict]:
             messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": message})
     return messages
+
+
+async def _retrieve_chat_references(request: Request, message: str) -> list[dict[str, Any]]:
+    """Fast local retrieval for a cited chat response (no extra LLM grading pass)."""
+    rag_loop = getattr(request.app.state, "rag_loop", None)
+    retriever = getattr(rag_loop, "retriever", None)
+    if retriever is None:
+        return []
+    try:
+        documents = await retriever.retrieve(
+            message,
+            top_k=3,
+            # Patient questions often need public-health or pharmacist sources;
+            # doctor-only filtering can discard the best matching document.
+            agent_role=None,
+            use_rerank=True,
+        )
+    except Exception as exc:  # citations enhance the reply but must not block it
+        logger.warning("chat/stream: reference retrieval failed: %s", exc)
+        return []
+    relevant = [doc for doc in documents if doc.source and doc.score > 0]
+    return build_references(
+        [doc.source for doc in relevant],
+        [doc.content for doc in relevant],
+        sum(doc.score for doc in relevant) / len(relevant) if relevant else 0.0,
+    )
+
+
+def _references_used_in_reply(
+    reply: str, references: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Expose only references the model actually cited in its final text."""
+    used = {int(number) for number in re.findall(r"\[(\d{1,2})\]", reply)}
+    return [item for index, item in enumerate(references, 1) if index in used]
 
 
 async def _llm_stream_chunks(
@@ -418,8 +468,11 @@ async def _chat_stream_generator(
         else:
             # 2) LLM 流式生成（真流式或模拟分块）
             llm_runtime = request.app.state.llm_runtime
-            messages = _build_chat_messages(payload, message)
+            references = await _retrieve_chat_references(request, message)
+            messages = _build_chat_messages(payload, message, references)
             chunks, metadata = await _stream_llm_reply(llm_runtime, messages)
+            metadata = dict(metadata or {})
+            metadata["references"] = references
             reply = "".join(chunks).strip() or _DEGRADED_REPLY
 
             # 3) 出站安全处置（OutputGuard 4 态）：改写/阻断时下发 guard 修正
@@ -432,6 +485,11 @@ async def _chat_stream_generator(
             if guarded != reply:
                 reply = guarded
                 yield _sse_event("guard", {"reply": guarded})
+
+        if metadata is not None:
+            metadata["references"] = _references_used_in_reply(
+                reply, list(metadata.get("references") or [])
+            )
 
         # 4) 持久化 assistant 回复（失败不阻断流）
         async with _chat_service(request) as svc:
@@ -449,6 +507,7 @@ async def _chat_stream_generator(
                 "agent_role": _AGENT_ROLE,
                 "session_id": session_id,
                 "metadata": metadata,
+                "references": metadata.get("references", []) if metadata else [],
             },
         )
     except Exception as e:  # noqa: BLE001 — SSE 已建连，异常以事件下发而非 500

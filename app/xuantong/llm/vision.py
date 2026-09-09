@@ -21,7 +21,7 @@ class BPReading(BaseModel):
 class VisionService:
     """视觉识别服务。
 
-    使用 qwen3-vl-flash 进行图片理解，qwen-vl-ocr 进行文字提取。
+    使用 qwen3-vl-flash 进行图片理解，qwen3.5-ocr 进行文字提取。
     通过 LLMRuntime 统一调用。
     """
 
@@ -84,7 +84,13 @@ class VisionService:
         )
 
         try:
-            response = await self._runtime.provider.complete(request)
+            response = await self._runtime.invoke(
+                agent_role="vision",
+                messages=request.messages,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                model_tier=ModelTier.VISION,
+            )
             return self._parse_bp_response(response.content)
         except Exception as e:
             logger.error(f"BP monitor recognition failed: {e}")
@@ -105,8 +111,13 @@ class VisionService:
             {
                 "role": "user",
                 "content": [
-                    {"type": "image_url", "image_url": {"url": image_url}},
                     {"type": "text", "text": self.OCR_PROMPT},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": image_url},
+                        "min_pixels": 3072,
+                        "max_pixels": 8_388_608,
+                    },
                 ],
             },
         ]
@@ -120,7 +131,13 @@ class VisionService:
         )
 
         try:
-            response = await self._runtime.provider.complete(request)
+            response = await self._runtime.invoke(
+                agent_role="ocr",
+                messages=request.messages,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                model_tier=ModelTier.OCR,
+            )
             return response.content
         except Exception as e:
             logger.error(f"OCR failed: {e}")
@@ -157,7 +174,13 @@ class VisionService:
         )
 
         try:
-            response = await self._runtime.provider.complete(request)
+            response = await self._runtime.invoke(
+                agent_role="vision",
+                messages=request.messages,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                model_tier=ModelTier.VISION,
+            )
             return response.content
         except Exception as e:
             logger.error(f"Image analysis failed: {e}")

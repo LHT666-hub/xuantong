@@ -16,7 +16,7 @@ class QwenProvider:
     支持：
     - 文本对话（qwen3-max / qwen-plus / qwen-flash）
     - 视觉理解（qwen3-vl-flash）
-    - OCR（qwen-vl-ocr）
+    - OCR（qwen3.5-ocr）
     - 流式输出
     - Qwen 私有参数（enable_thinking 等）通过 extra_body 传入
     """

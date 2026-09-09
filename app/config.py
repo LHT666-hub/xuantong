@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     llm_model_specialist: str = "qwen-plus"      # 专科Agent（1M上下文+FC）
     llm_model_execution: str = "qwen-flash"      # 执行Agent（低成本+FC）
     llm_model_vision: str = "qwen3-vl-flash"     # 视觉识别
-    llm_model_ocr: str = "qwen-vl-ocr"           # OCR
+    llm_model_ocr: str = "qwen3.5-ocr"            # OCR（百炼当前推荐稳定代际）
     llm_model_asr: str = "qwen3-asr-flash"       # 语音识别
 
     # LLM 调用参数

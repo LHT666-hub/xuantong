@@ -87,7 +87,13 @@ class SpeechService:
         )
 
         try:
-            response = await self._runtime.provider.complete(request)
+            response = await self._runtime.invoke(
+                agent_role="asr",
+                messages=request.messages,
+                temperature=request.temperature,
+                model_tier=ModelTier.ASR,
+                extra_body=extra_body,
+            )
             return TranscriptionResult(
                 text=response.content,
                 language=hints[0] if hints else "zh",
@@ -140,7 +146,13 @@ class SpeechService:
         )
 
         try:
-            response = await self._runtime.provider.complete(request)
+            response = await self._runtime.invoke(
+                agent_role="asr",
+                messages=request.messages,
+                temperature=request.temperature,
+                model_tier=ModelTier.ASR,
+                extra_body=extra_body,
+            )
             # 尝试解析情绪信息（如果模型返回结构化数据）
             text = response.content
             emotion = self._extract_emotion(text)

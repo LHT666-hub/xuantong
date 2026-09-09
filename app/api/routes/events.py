@@ -18,11 +18,21 @@ from fastapi import APIRouter, HTTPException, Request
 
 from app.schemas.event import EventCreate, EventResponse
 from app.services import EventService, TaskService, TimelineService
+from app.services.references import build_references
 from app.utils import normalize_patient_id
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/events", tags=["events"])
+
+def _workflow_references(state: dict[str, Any]) -> list[dict[str, Any]]:
+    context = state.get("rag_context")
+    if context is None:
+        return []
+    sources = list(getattr(context, "sources", []) or [])
+    documents = list(getattr(context, "retrieved_docs", []) or [])
+    confidence = round(float(getattr(context, "confidence", 0.0) or 0.0), 3)
+    return build_references(sources, documents, confidence)
 
 
 def _build_event_data(event: EventCreate, event_id: str, now: datetime) -> dict[str, Any]:
@@ -60,6 +70,7 @@ def _summarize_workflow(state: dict[str, Any]) -> dict[str, Any]:
         "tasks_generated": len(state.get("generated_tasks") or []),
         "execution_tasks": len(execution.tasks) if execution else 0,
         "steps": [e.get("node") for e in (state.get("flow_log") or [])],
+        "references": _workflow_references(state),
     }
 
 
@@ -136,6 +147,7 @@ async def create_event(request: Request, event: EventCreate):
 
         # 3) 持久化 workflow 产出：任务 + 时间线 + 事件状态
         task_ids: list[str] = []
+        tasks: list[dict[str, Any]] = []
         if workflow_state is not None:
             tasks = await task_service.create_tasks_from_workflow(
                 event_id=event_id,
@@ -164,6 +176,7 @@ async def create_event(request: Request, event: EventCreate):
             "event": event_response.model_dump(mode="json"),
             "workflow": workflow_summary,
             "task_ids": task_ids,
+            "tasks": tasks,
         }
     except Exception:
         # 回滚数据库事务

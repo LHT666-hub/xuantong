@@ -34,6 +34,7 @@ from app.xuantong.safety import (
     OutputGuard,
 )
 from app.xuantong.workflow import XuantongWorkflow
+from app.api.routes.events import _summarize_workflow
 from tests.test_workflow.conftest import HAPPY_RESPONSES
 
 
@@ -132,6 +133,12 @@ async def test_rag_retrieval_node_triggered(bp_event_with_complaint):
     assert rag_context is not None
     assert len(rag_context.retrieved_docs) >= 1
     assert any("高血压" in doc for doc in rag_context.retrieved_docs)
+
+    references = _summarize_workflow(state)["references"]
+    assert len(references) >= 1
+    assert references[0]["title"] == "高血压健康管理指南"
+    assert "高血压" in references[0]["excerpt"]
+    assert references[0]["kind"] == "local_knowledge_base"
 
     AgentRegistry.clear()
 
