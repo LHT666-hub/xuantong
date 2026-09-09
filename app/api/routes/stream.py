@@ -304,8 +304,9 @@ def _build_chat_messages(
             for index, item in enumerate(references, 1)
         )
         system_prompt += (
-            "\n\n以下是本次可用的玄同医学知识库资料。只在资料确实支持相关陈述时，"
-            "在该句末尾使用 [1]、[2] 这样的编号；不得虚构编号或外部网址。\n\n"
+            "\n\n以下是本次可用的玄同医学知识库资料。凡是回答中使用了资料支持的健康建议，"
+            "必须在对应句末标注 [1]、[2] 这样的编号，并至少引用一条最相关资料。"
+            "不得虚构编号或外部网址；资料不支持的内容不要强行引用。\n\n"
             + evidence
         )
     messages: list[dict] = [{"role": "system", "content": system_prompt}]
@@ -347,9 +348,12 @@ async def _retrieve_chat_references(request: Request, message: str) -> list[dict
 def _references_used_in_reply(
     reply: str, references: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """Expose only references the model actually cited in its final text."""
+    """保留检索到的相关资料，并明确标记哪些被正文实际引用。"""
     used = {int(number) for number in re.findall(r"\[(\d{1,2})\]", reply)}
-    return [item for index, item in enumerate(references, 1) if index in used]
+    return [
+        {**item, "cited": index in used}
+        for index, item in enumerate(references, 1)
+    ]
 
 
 async def _llm_stream_chunks(

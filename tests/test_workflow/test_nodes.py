@@ -151,3 +151,19 @@ async def test_action_guard_node_referral_requires_human(make_workflow):
     assert updates["human_required"] is True
     assert updates["action_risk"].requires_human is True
     assert wf._route_after_action_guard({**state, **updates}) == "hitl"
+
+
+async def test_task_generation_requires_patient_consent_for_followup(make_workflow):
+    """会改变患者后续安排的随访先作为建议，健康教育可直接记录。"""
+    wf = make_workflow()
+    plan = ActionPlan(
+        actions=[
+            {"type": "followup", "description": "3天后电话随访"},
+            {"type": "education", "description": "提供家庭血压记录方法"},
+        ]
+    )
+
+    updates = await wf._task_gen_node({"action_plan": plan, "human_required": False})
+
+    assert updates["generated_tasks"][0]["status"] == "proposed"
+    assert updates["generated_tasks"][1]["status"] == "pending"

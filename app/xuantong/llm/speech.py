@@ -102,10 +102,9 @@ class SpeechService:
             )
         except Exception as e:
             logger.error(f"Speech transcription failed: {e}")
-            return TranscriptionResult(
-                text="",
-                raw_response=f"语音识别失败: {str(e)}",
-            )
+            # 不能把供应商错误伪装成“识别成功但没有文字”，否则客户端无法
+            # 区分真正的静音与格式/网络故障，也就无法正确回落到本机识别。
+            raise
 
     async def transcribe_with_emotion(self, audio_url: str) -> TranscriptionResult:
         """语音转文字 + 情绪识别。
@@ -166,10 +165,7 @@ class SpeechService:
             )
         except Exception as e:
             logger.error(f"Speech transcription with emotion failed: {e}")
-            return TranscriptionResult(
-                text="",
-                raw_response=f"语音识别失败: {str(e)}",
-            )
+            raise
 
     def _extract_emotion(self, text: str) -> str:
         """从响应文本中提取情绪标签。
