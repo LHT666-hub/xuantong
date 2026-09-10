@@ -30,7 +30,7 @@ from app.api.middleware.error_handler import (
 )
 from app.api.routes import (
     system, agents, patients, health_records,
-    events, tasks, outcomes, care_teams, timeline,
+    events, tasks, outcomes, care_teams, timeline, nutrition,
 )
 
 logger = logging.getLogger(__name__)
@@ -152,5 +152,6 @@ for router in (
     outcomes.router,
     care_teams.router,
     timeline.router,
+    nutrition.router,
 ):
     app.include_router(router, prefix="/api")

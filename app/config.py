@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     llm_model_lead: str = "qwen3-max"           # 主智能体（最强推理）
     llm_model_specialist: str = "qwen-plus"      # 专科Agent（1M上下文+FC）
     llm_model_execution: str = "qwen-flash"      # 执行Agent（低成本+FC）
+    llm_model_nutrition: str = "qwen3.8-flash"   # 食养排序（Qwen3.8 无 plus 型号）
     llm_model_vision: str = "qwen3-vl-flash"     # 视觉识别
     llm_model_ocr: str = "qwen-vl-ocr"           # OCR
     llm_model_asr: str = "qwen3-asr-flash"       # 语音识别
@@ -75,5 +76,7 @@ class Settings(BaseSettings):
 
     def get_model_for_agent(self, agent_role: str) -> str:
         """根据 Agent 角色获取对应模型名称"""
+        if agent_role == "nutrition":
+            return self.llm_model_nutrition
         tier = self.llm_agent_model_map.get(agent_role, "execution")
         return self.get_model_for_tier(tier)

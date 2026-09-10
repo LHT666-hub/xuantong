@@ -85,9 +85,10 @@ def register_all_agents(llm_runtime=None) -> None:
                 key="nutrition",
                 role="nutrition",
                 display_name="营养师",
-                description="营养管理",
+                description="个性化食养与菜谱排序",
                 phase="consultation",
-                implemented=False,  # Phase 3 实现
+                implemented=True,
+                capabilities=["meal_ranking", "dietary_safety", "pantry_matching"],
             ),
             NutritionAgent(llm_runtime),
         ),
