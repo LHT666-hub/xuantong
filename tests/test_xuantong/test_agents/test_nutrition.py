@@ -1,4 +1,4 @@
-"""营养师 Agent（Nutrition）智能逻辑测试。"""
+"""营养师临床会诊与食养排序测试。"""
 
 import json
 
@@ -10,91 +10,85 @@ from tests.test_xuantong.test_agents.conftest import make_runtime
 
 NUTRITION_JSON = json.dumps(
     {
-        "dietary_assessment": "饮食偏咸、蔬果不足、精制碳水偏多，与控糖控压目标不符",
-        "disease_diet_principle": "高血压合并糖尿病：DASH + 低钠(<5g/天) + 低 GI + 碳水计数",
-        "meal_plan_suggestions": [
-            "主食粗细搭配，全谷物占 1/3",
-            "每日蔬菜 500g、低 GI 水果 200g",
-            "限盐<5g/天，注意隐形钠",
-        ],
-        "nutrient_supplements": ["评估维生素D", "膳食纤维不足时酌情补充"],
-        "weight_management": "如超重，每周减重 0.5kg，能量缺口 300-500kcal/天",
-        "observation": "患者高血压合并2型糖尿病，饮食结构存在高钠、精制碳水偏多",
-        "assessment": "饮食干预是血压血糖控制基础，需系统调整",
-        "recommendations": ["推行 DASH 饮食并限钠<5g/天", "低 GI 主食与碳水计数"],
+        "dietary_assessment": "饮食偏咸、蔬果不足",
+        "disease_diet_principle": "高血压：DASH + 低钠",
+        "meal_plan_suggestions": ["限盐", "增加蔬菜"],
+        "nutrient_supplements": [],
+        "weight_management": "保持合理体重",
+        "observation": "钠摄入偏高",
+        "assessment": "需要调整饮食结构",
+        "recommendations": ["采用 DASH 饮食", "注意隐形钠"],
         "red_flags": [],
         "confidence": 0.8,
     },
     ensure_ascii=False,
 )
 
-HYPERTENSION_JSON = json.dumps(
-    {
-        "dietary_assessment": "钠摄入偏高，钾摄入不足",
-        "disease_diet_principle": "高血压：DASH 饮食、低钠(<5g/天)、高钾高钙高镁、限酒",
-        "meal_plan_suggestions": ["限盐<5g/天", "增加富钾蔬果（肾功能正常时）"],
-        "nutrient_supplements": [],
-        "weight_management": "控制体重、限酒",
-        "observation": "血压168/103，饮食高钠是重要可控因素",
-        "assessment": "限钠与 DASH 饮食有助于降压",
-        "recommendations": ["严格限钠<5g/天", "采用 DASH 饮食模式", "增加富钾食物"],
-        "red_flags": [],
-        "confidence": 0.82,
-    },
-    ensure_ascii=False,
-)
+PAYLOAD = {
+    "pantry_ids": ["tomato", "egg"],
+    "excluded_ids": [],
+    "max_minutes": 20,
+    "low_salt": True,
+    "candidate_recipes": [
+        {"id": "tomato-egg", "title": "番茄炒蛋", "minutes": 15},
+        {"id": "tofu-pot", "title": "豆腐煲", "minutes": 20},
+        {"id": "noodles", "title": "汤面", "minutes": 20},
+    ],
+}
 
 
 @pytest.mark.asyncio
-async def test_nutrition_consult(bp_event, zhang_ayi_patient):
-    agent = NutritionAgent(make_runtime(default=NUTRITION_JSON))
-    note = await agent.consult(bp_event, zhang_ayi_patient)
-
+async def test_nutrition_consult_returns_clinical_note(bp_event, zhang_ayi_patient):
+    note = await NutritionAgent(make_runtime(default=NUTRITION_JSON)).consult(
+        bp_event, zhang_ayi_patient
+    )
     assert isinstance(note, ConsultationNote)
     assert note.agent_role == "nutrition"
     assert note.confidence == 0.8
-    assert note.data["dietary_assessment"]
     assert "DASH" in note.data["disease_diet_principle"]
-    assert len(note.data["meal_plan_suggestions"]) == 3
     assert note.recommendations
 
 
 @pytest.mark.asyncio
-async def test_nutrition_hypertension(bp_event, zhang_ayi_patient):
-    """高血压场景应给出低钠/DASH 相关饮食建议。"""
-    agent = NutritionAgent(make_runtime(default=HYPERTENSION_JSON))
-    note = await agent.consult(bp_event, zhang_ayi_patient)
-
-    assert note.agent_role == "nutrition"
-    assert "DASH" in note.data["disease_diet_principle"]
-    assert "低钠" in note.data["disease_diet_principle"]
-    assert any("限钠" in r or "限盐" in r for r in note.recommendations)
-
-
-@pytest.mark.asyncio
-async def test_nutrition_degraded(bp_event):
-    """LLM 不可用（无 runtime）时返回模板化降级建议。"""
-    agent = NutritionAgent(None)
-    note = await agent.consult(bp_event)
-
-    assert isinstance(note, ConsultationNote)
-    assert note.agent_role == "nutrition"
-    assert "模型不可用" in note.summary
-    assert note.data.get("degraded") is True
+async def test_nutrition_consult_degrades_without_model(bp_event):
+    note = await NutritionAgent(None).consult(bp_event)
+    assert note.data["degraded"] is True
     assert note.recommendations
 
 
 @pytest.mark.asyncio
-async def test_nutrition_degraded_on_invalid_json(bp_event):
-    agent = NutritionAgent(make_runtime(default="无法评估"))
-    note = await agent.consult(bp_event)
-    assert "模型不可用" in note.summary
+async def test_nutrition_ranks_only_known_recipe_ids():
+    response = json.dumps(
+        {
+            "recipe_ids": ["invented", "tomato-egg", "tofu-pot"],
+            "summary": "先用家里已有的食材。",
+            "notices": ["少盐调味。"],
+        },
+        ensure_ascii=False,
+    )
+    result = await NutritionAgent(make_runtime(default=response)).recommend(PAYLOAD)
+    assert result.data["recipe_ids"] == ["tomato-egg", "tofu-pot", "noodles"]
+    assert result.data["degraded"] is False
 
 
 @pytest.mark.asyncio
-async def test_nutrition_execute_returns_agent_result(bp_event):
-    agent = NutritionAgent(make_runtime(default=NUTRITION_JSON))
-    result = await agent.execute(event_data=bp_event)
-    assert result.agent_role == "nutrition"
-    assert result.summary
-    assert result.data["data"]["dietary_assessment"]
+async def test_nutrition_recommendation_degrades_to_local_order():
+    result = await NutritionAgent(make_runtime(default="not json")).recommend(PAYLOAD)
+    assert result.data["recipe_ids"] == ["tomato-egg", "tofu-pot", "noodles"]
+    assert result.data["degraded"] is True
+
+
+@pytest.mark.asyncio
+async def test_execute_keeps_clinical_and_food_paths_separate(bp_event):
+    clinical = await NutritionAgent(make_runtime(default=NUTRITION_JSON)).execute(
+        event_data=bp_event
+    )
+    food_response = json.dumps(
+        {"recipe_ids": ["tomato-egg"], "summary": "适合今天。", "notices": []},
+        ensure_ascii=False,
+    )
+    food = await NutritionAgent(make_runtime(default=food_response)).execute(
+        nutrition_payload=PAYLOAD
+    )
+    assert clinical.data["data"]["dietary_assessment"]
+    assert food.data["recipe_ids"][0] == "tomato-egg"

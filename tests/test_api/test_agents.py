@@ -25,3 +25,14 @@ async def test_assistant_is_execution_phase():
     data = response.json()
     assistant = next(a for a in data["agents"] if a["role"] == "assistant")
     assert assistant["phase"] == "execution"
+
+
+@pytest.mark.asyncio
+async def test_nutrition_agent_is_available():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/agents")
+    data = response.json()
+    nutrition = next(a for a in data["agents"] if a["role"] == "nutrition")
+    assert nutrition["implemented"] is True
+    assert "meal_ranking" in nutrition["capabilities"]

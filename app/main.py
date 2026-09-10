@@ -40,7 +40,7 @@ from app.observability.logging import configure_structured_logging
 from app.observability.tracing import setup_tracing
 from app.api.routes import (
     system, agents, patients, health_records,
-    events, tasks, outcomes, care_teams, timeline,
+    events, tasks, outcomes, care_teams, timeline, nutrition,
 )
 from app.api.routes.auth import router as auth_router
 from app.api.routes.chat import router as chat_router
@@ -339,6 +339,7 @@ for router in (
     outcomes.router,
     care_teams.router,
     timeline.router,
+    nutrition.router,
 ):
     app.include_router(router, prefix="/api")
 
