@@ -47,6 +47,7 @@ htmlcov/
 # Environment variables
 .env
 .env.local
+.env.production
 
 # Logs
 *.log
@@ -68,5 +69,6 @@ Thumbs.db
 !Dockerfile
 !docker-compose.yml
 !.env.example
+!.env.production.example
 # CI 生成的临时测试库应忽略
 /test.db

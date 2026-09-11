@@ -36,6 +36,7 @@ from app.api.middleware.error_handler import (
     http_exception_handler,
 )
 from app.api.middleware.request_logging import RequestLoggingMiddleware
+from app.api.middleware.security import APIAuthenticationMiddleware, RateLimitMiddleware
 from app.observability.logging import configure_structured_logging
 from app.observability.tracing import setup_tracing
 from app.api.routes import (
@@ -136,6 +137,7 @@ async def _build_rag_loop(settings: Settings, llm_runtime):
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     settings = Settings()
+    settings.validate_production()
 
     # ── 启动：初始化组件 ──────────────────────────────────────
     logger.info("玄同 Xuantong 启动中...")
@@ -317,6 +319,13 @@ app.add_middleware(
 # 生成 request_id、记录结构化 request_start/request_end 日志，
 # 并将 request_id 写入响应头 X-Request-ID。
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(
+    RateLimitMiddleware,
+    enabled=settings.rate_limit_enabled,
+    requests_per_minute=settings.rate_limit_requests_per_minute,
+    auth_requests_per_minute=settings.rate_limit_auth_requests_per_minute,
+)
+app.add_middleware(APIAuthenticationMiddleware, enabled=settings.api_auth_required)
 
 # ── 全局异常处理 ─────────────────────────────────────────────────────────────
 # HTTPException 统一包装为 {"detail":..., "error":{...}} 兼容结构（老客户端读 detail，

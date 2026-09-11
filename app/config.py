@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # App
     app_name: str = "玄同 Xuantong"
+    environment: str = "development"  # development / test / production
     debug: bool = False
 
     # Database
@@ -90,6 +91,12 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     cors_allowed_origins: str = "*"
 
+    # --- API perimeter ---
+    api_auth_required: bool = False
+    rate_limit_enabled: bool = False
+    rate_limit_requests_per_minute: int = 120
+    rate_limit_auth_requests_per_minute: int = 12
+
     # Tracing (LangSmith) —— 默认关闭，通过环境变量无侵入接入 LangGraph 链路追踪
     enable_tracing: bool = False
     langsmith_api_key: str = ""
@@ -131,3 +138,33 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60
+
+    def validate_production(self) -> None:
+        """拒绝使用不安全默认值启动生产服务。"""
+        if self.environment.lower() != "production":
+            return
+
+        errors: list[str] = []
+        if self.debug:
+            errors.append("DEBUG 必须为 false")
+        if not self.database_url.startswith("postgresql+asyncpg://"):
+            errors.append("DATABASE_URL 必须使用 postgresql+asyncpg")
+        if self.llm_provider != "qwen" or not self.llm_api_key:
+            errors.append("必须配置 LLM_PROVIDER=qwen 和 LLM_API_KEY")
+        if len(self.jwt_secret) < 32 or self.jwt_secret in {
+            "change-me-in-production",
+            "your-secret-key-change-in-production",
+        }:
+            errors.append("JWT_SECRET 必须是至少 32 字符的随机值")
+        if not self.api_auth_required:
+            errors.append("API_AUTH_REQUIRED 必须为 true")
+        if not self.rate_limit_enabled:
+            errors.append("RATE_LIMIT_ENABLED 必须为 true")
+        if self.cors_allowed_origins.strip() == "*":
+            errors.append("CORS_ALLOWED_ORIGINS 生产环境不得为 *")
+        if self.ruomu_enabled and not self.ruomu_access_key:
+            errors.append("启用若木时必须配置 RUOMU_ACCESS_KEY")
+        if self.use_medical_model and not self.novita_api_key:
+            errors.append("启用医疗模型时必须配置 NOVITA_API_KEY")
+        if errors:
+            raise RuntimeError("生产配置不安全：" + "；".join(errors))

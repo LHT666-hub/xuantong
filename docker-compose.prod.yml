@@ -1,0 +1,43 @@
+name: xuantong-production
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: xuantong:production
+    restart: unless-stopped
+    env_file:
+      - path: .env.production
+        required: true
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      API_AUTH_REQUIRED: "true"
+      RATE_LIMIT_ENABLED: "true"
+    # 公网只能经过宿主机 Nginx；安全组也不要放行 8000。
+    ports:
+      - "127.0.0.1:8000:8000"
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        alembic upgrade head &&
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+        --proxy-headers --forwarded-allow-ips=172.16.0.0/12,127.0.0.1
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=4)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=128m,mode=1777

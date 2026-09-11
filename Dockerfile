@@ -9,10 +9,11 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 
 WORKDIR /app
 
-# 仅复制打包元数据以安装依赖（app/ 源码在 runtime 阶段复制，最大化层缓存）
+# 复制打包元数据与包目录；setuptools 构建 wheel 时必须能发现 app 包。
 COPY pyproject.toml README.md ./
+COPY app/ ./app/
 RUN pip install --upgrade pip && \
-    pip install .
+    pip install ".[postgres]"
 
 # Stage 2: Runtime —— 精简运行镜像
 FROM python:3.12-slim AS runtime

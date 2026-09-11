@@ -6,10 +6,10 @@
 **智能分诊 → 多 Agent 会诊 → 风险分级 → 人工审核（必要时）→ 任务生成与执行 → 服务闭环归档**
 的全流程。底层由 FastAPI 提供服务，LangGraph 编排工作流，阿里云百炼（DashScope）Qwen 系列模型分层驱动各个 Agent。
 
-> ⚠️ **诚实声明**：本项目已具备**可演示、可对接的准生产骨架**：307 个测试全绿、JWT 认证、
+> ⚠️ **诚实声明**：本项目已具备**可演示、可对接的准生产骨架**：完整自动化测试、JWT 认证、
 > 混合检索 RAG（16 篇知识文档，recall@5=94%）、SSE 实时推送、结构化日志 + PHI 脱敏、
 > 多阶段 Docker 构建与 CI/CD 均已落地，changxi iOS 前端 API 已接线。
-> 但**尚不等于「临床可用」**：真实医学知识库仍需大规模灌注、3 个 Agent 仍为 stub、
+> 但**尚不等于「临床可用」**：真实医学知识库仍需扩充，Agent 提示词和工作流仍需临床验证，
 > Prompt 未经真实临床数据打磨、前端功能未完整对接。详见 [HANDOVER.md](./HANDOVER.md)。
 
 ---
@@ -43,11 +43,11 @@
 | 3 | PublicHealthAgent（公卫医师） | 慢病管理规范、随访计划、转诊标准 | `qwen-plus` | 会诊 | ✅ 已实现 |
 | 4 | PharmacistAgent（药师） | 用药安全审查、药物相互作用（DDI）检查 | `qwen-plus` | 会诊 | ✅ 已实现 |
 | 5 | AssistantAgent（家医助理） | 连接性劳动：联系患者、提醒、预约、催办、家属协调 | `qwen-flash` | 执行 | ✅ 已实现 |
-| 6 | TCM Agent（中医师） | 中医辨证施治 | 待定 | 会诊 | ⬜ Stub |
-| 7 | NutritionAgent（营养师） | 营养指导 | 待定 | 会诊 | ⬜ Stub |
-| 8 | RehabilitationAgent（康复师） | 康复训练指导 | 待定 | 会诊 | ⬜ Stub |
+| 6 | TCM Agent（中医师） | 中医辨证、体质辨识与安全建议 | `qwen-plus` / Ling | 会诊 | ✅ 已实现 |
+| 7 | NutritionAgent（营养师） | 临床营养会诊与食养排序 | `qwen3.8-flash` | 会诊 | ✅ 已实现 |
+| 8 | RehabilitationAgent（康复师） | 功能评估与康复训练指导 | `qwen-plus` / Ling | 会诊 | ✅ 已实现 |
 
-**实现进度：5 / 8**（3 个仅为占位 stub，未接入 Prompt 与模型）。
+**实现进度：8 / 8**（均已接入运行时；上线医疗服务前仍需临床验证与合规审查）。
 
 ---
 
@@ -209,7 +209,13 @@ docker compose up -d
 pytest tests/ -v
 ```
 
-预期结果：**307 passed**。
+预期结果：全部测试通过；当前生产整合基线为 **364+ tests**。
+
+### 5. 阿里云生产部署
+
+生产部署使用独立的 `docker-compose.prod.yml`，包含启动前 Alembic 迁移、
+强制 JWT 边界、速率限制、结构化脱敏日志及 Nginx/SSE 配置。完整步骤见
+[`deploy/README_ALIYUN.md`](deploy/README_ALIYUN.md)。
 
 ---
 
