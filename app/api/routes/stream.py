@@ -28,7 +28,7 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Awaitable, Callable
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -418,14 +418,16 @@ def _references_used_in_reply(
 
 
 async def _llm_stream_chunks(
-    llm_runtime: Any, messages: list[dict]
+    llm_runtime: Any,
+    messages: list[dict],
+    agent_role: str = _AGENT_ROLE,
 ) -> AsyncIterator[str]:
     """消费 ``LLMRuntime.stream()``，带单块超时保护。
 
     Provider 不支持流式（AttributeError / NotImplementedError / TypeError）时
     抛出 ``NotImplementedError`` 由调用方降级；其余异常原样上抛触发 invoke 兜底。
     """
-    agen = llm_runtime.stream(agent_role=_AGENT_ROLE, messages=messages, temperature=0.7)
+    agen = llm_runtime.stream(agent_role=agent_role, messages=messages, temperature=0.7)
     queue: asyncio.Queue = asyncio.Queue()
 
     async def _pump() -> None:
@@ -460,7 +462,10 @@ async def _llm_stream_chunks(
 
 
 async def _stream_llm_reply(
-    llm_runtime: Any, messages: list[dict]
+    llm_runtime: Any,
+    messages: list[dict],
+    on_chunk: Callable[[str], Awaitable[None]] | None = None,
+    agent_role: str = _AGENT_ROLE,
 ) -> tuple[list[str], dict[str, Any] | None]:
     """生成流式回复块。返回 (chunks, metadata)。
 
@@ -479,9 +484,11 @@ async def _stream_llm_reply(
             if i > 0:
                 await asyncio.sleep(SIMULATED_CHUNK_DELAY)
             chunks.append(part)
+            if on_chunk is not None:
+                await on_chunk(part)
 
     try:
-        async for content in _llm_stream_chunks(llm_runtime, messages):
+        async for content in _llm_stream_chunks(llm_runtime, messages, agent_role):
             collected.append(content)
             await _emit(content)
         reply = "".join(collected).strip()
@@ -491,24 +498,67 @@ async def _stream_llm_reply(
         logger.info("chat/stream: Provider 不支持流式，降级为 invoke + 模拟分块")
     except Exception as e:  # noqa: BLE001
         logger.warning("chat/stream: 流式调用失败，降级为 invoke: %s", e)
+        # 已经向客户端下发过一部分内容时，不再重新 invoke 后把另一份回答
+        # 拼到后面。保留已收到的安全片段并明确标记降级，避免弱网重连时重复。
+        if chunks:
+            return chunks, {"degraded": True, "reason": "partial_stream"}
 
     # 降级：非流式 invoke（自带超时 + 重试）
     try:
         response = await llm_runtime.invoke(
-            agent_role=_AGENT_ROLE, messages=messages, temperature=0.7
+            agent_role=agent_role, messages=messages, temperature=0.7
         )
         reply = (response.content or "").strip()
         if reply:
-            for i, part in enumerate(_split_chunks(reply)):
-                if i > 0:
-                    await asyncio.sleep(SIMULATED_CHUNK_DELAY)
-                chunks.append(part)
+            await _emit(reply)
             return chunks, None
     except Exception as e:  # noqa: BLE001
         logger.error("chat/stream: LLM 调用失败，返回降级回复: %s", e)
-        return [_DEGRADED_REPLY], {"degraded": True, "reason": str(e)}
+        await _emit(_DEGRADED_REPLY)
+        return chunks, {"degraded": True, "reason": str(e)}
 
-    return [_DEGRADED_REPLY], {"degraded": True, "reason": "empty_reply"}
+    await _emit(_DEGRADED_REPLY)
+    return chunks, {"degraded": True, "reason": "empty_reply"}
+
+
+def _agent_role_for_message(message: str) -> str:
+    """三条首发入口只是产品操作引导，走快速执行模型以缩短首字延迟。
+
+    一旦用户进入自由问答或提供真实健康信息，仍使用家庭医生医疗模型。
+    """
+    starter_markers = (
+        "我点击了“读懂我的体检报告”",
+        "我点击了“核对今天的用药”",
+        "我点击了“记录今天的身体感受”",
+    )
+    return "assistant" if message.startswith(starter_markers) else _AGENT_ROLE
+
+
+def _starter_reply_for_message(message: str) -> str | None:
+    """返回三条评审首发入口的确定性引导；不处理任何个体健康判断。"""
+    replies = {
+        "我点击了“读懂我的体检报告”": (
+            "可以。点击输入栏左侧的“＋”，拍摄或选择体检报告即可。\n\n"
+            "我会先找出超出参考范围的项目，再解释它可能与什么有关，最后标出哪些适合观察、"
+            "哪些建议复查或咨询医生。没有看到报告前，我不会猜测数值，也不会自动生成工单。"
+        ),
+        "我点击了“核对今天的用药”": (
+            "我们先核对，不改处方：\n\n"
+            "1. 打开“健康 → 用药管理”查看今天的计划；\n"
+            "2. 核对药名、处方剂量和服用时间；\n"
+            "3. 有疑问可拍下药盒或处方，我帮你整理成给医生或药师确认的问题。\n\n"
+            "在你确认前，我不会更改计划或创建工单。"
+        ),
+        "我点击了“记录今天的身体感受”": (
+            "好，我们慢慢记。你可以直接告诉我：什么时候开始、身体哪里不舒服、"
+            "是酸胀还是刺痛等感觉、强度大约 0–10 分，以及有没有头晕、发热等伴随情况。\n\n"
+            "我会先整理成一条健康日记给你核对；只有你确认后才保存，也不会自动生成工单。"
+        ),
+    }
+    for marker, reply in replies.items():
+        if message.startswith(marker):
+            return reply
+    return None
 
 
 async def _chat_stream_generator(
@@ -517,7 +567,11 @@ async def _chat_stream_generator(
     """对话流式 SSE 生成器。"""
     session_id, patient_id = await _persist_user_message(request, payload)
     try:
+        # 尽快提交响应头并产生首个字节，避免移动热点/Nginx 把正在准备的
+        # 流式请求误判为空闲连接。注释帧会被所有 SSE 客户端安全忽略。
+        yield _sse_comment("connected")
         message = payload.message.strip()
+        agent_role = _agent_role_for_message(message)
         metadata: dict[str, Any] | None = None
 
         # 1) 入站安全检查（危机/阻断直接短路，仍走模拟流式下发）
@@ -531,34 +585,65 @@ async def _chat_stream_generator(
                     await asyncio.sleep(SIMULATED_CHUNK_DELAY)
                 yield _sse_data({"chunk": chunk, "done": False})
         else:
-            # 2) LLM 流式生成（真流式或模拟分块）
-            llm_runtime = request.app.state.llm_runtime
-            local_result, ruomu = await asyncio.gather(
-                _retrieve_chat_references(request, message),
-                _retrieve_ruomu_evidence(request, payload, message),
-            )
-            references = list(local_result)
-            references.extend(_ruomu_references(ruomu, len(references) + 1))
-            messages = _build_chat_messages(
-                payload, message, references, external_brief=ruomu.brief
-            )
-            chunks, metadata = await _stream_llm_reply(llm_runtime, messages)
-            metadata = dict(metadata or {})
-            metadata["references"] = references
-            if ruomu.request_id:
-                metadata["ruomu_request_id"] = ruomu.request_id
-            reply = "".join(chunks).strip() or _DEGRADED_REPLY
+            starter_reply = _starter_reply_for_message(message)
+            if starter_reply is not None:
+                # 三条入口只解释产品下一步，不做临床判断；确定性返回保证评审首点
+                # 在弱网下也迅速、稳定，真实追问仍进入下方医疗模型链路。
+                reply = starter_reply
+                metadata = {"starter": True, "references": []}
+                chunks = _split_chunks(reply) or [reply]
+                for i, chunk in enumerate(chunks):
+                    if i > 0:
+                        await asyncio.sleep(SIMULATED_CHUNK_DELAY)
+                    yield _sse_data({"chunk": chunk, "done": False})
+            else:
+                # 2) LLM 流式生成（真流式或模拟分块）
+                llm_runtime = request.app.state.llm_runtime
+                local_result, ruomu = await asyncio.gather(
+                    _retrieve_chat_references(request, message),
+                    _retrieve_ruomu_evidence(request, payload, message),
+                )
+                references = list(local_result)
+                references.extend(_ruomu_references(ruomu, len(references) + 1))
+                messages = _build_chat_messages(
+                    payload, message, references, external_brief=ruomu.brief
+                )
+                # 模型生成与 SSE 输出并行：过去这里会等完整回答生成完才下发，
+                # 导致首字延迟很长，热点稍有抖动就被客户端判定为掉线。
+                chunk_queue: asyncio.Queue[str] = asyncio.Queue()
 
-            # 3) 出站安全处置（OutputGuard 4 态）：改写/阻断时下发 guard 修正
-            guarded = _guard_reply(reply, getattr(request.app.state, "output_guard", None),
-                                   _AGENT_ROLE)
-            for i, chunk in enumerate(chunks):
-                if i > 0:
-                    await asyncio.sleep(SIMULATED_CHUNK_DELAY)
-                yield _sse_data({"chunk": chunk, "done": False})
-            if guarded != reply:
-                reply = guarded
-                yield _sse_event("guard", {"reply": guarded})
+                async def _publish_chunk(chunk: str) -> None:
+                    await chunk_queue.put(chunk)
+
+                reply_task = asyncio.create_task(
+                    _stream_llm_reply(
+                        llm_runtime,
+                        messages,
+                        on_chunk=_publish_chunk,
+                        agent_role=agent_role,
+                    )
+                )
+                while not reply_task.done() or not chunk_queue.empty():
+                    try:
+                        chunk = await asyncio.wait_for(chunk_queue.get(), timeout=5.0)
+                        yield _sse_data({"chunk": chunk, "done": False})
+                    except (asyncio.TimeoutError, TimeoutError):
+                        # 注释帧不会进入回答正文，只负责让代理与 URLSession 知道连接仍活着。
+                        yield _sse_comment("thinking")
+
+                chunks, metadata = await reply_task
+                metadata = dict(metadata or {})
+                metadata["references"] = references
+                if ruomu.request_id:
+                    metadata["ruomu_request_id"] = ruomu.request_id
+                reply = "".join(chunks).strip() or _DEGRADED_REPLY
+
+                # 3) 出站安全处置（OutputGuard 4 态）：改写/阻断时下发 guard 修正
+                guarded = _guard_reply(reply, getattr(request.app.state, "output_guard", None),
+                                       agent_role)
+                if guarded != reply:
+                    reply = guarded
+                    yield _sse_event("guard", {"reply": guarded})
 
         if metadata is not None:
             metadata["references"] = _references_used_in_reply(
@@ -578,7 +663,7 @@ async def _chat_stream_generator(
                 "chunk": "",
                 "done": True,
                 "reply": reply,
-                "agent_role": _AGENT_ROLE,
+                "agent_role": agent_role,
                 "session_id": session_id,
                 "metadata": metadata,
                 "references": metadata.get("references", []) if metadata else [],

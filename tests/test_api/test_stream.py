@@ -9,7 +9,9 @@
 - test_sse_chat_stream_crisis：危机输入走 InputGuard 短路，仍正常流式下发
 """
 
+import asyncio
 import json
+from types import SimpleNamespace
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -18,7 +20,12 @@ from app.main import app
 from app.services.chat_service import reset_chat_service
 from app.services.progress_hub import progress_hub
 from app.services.store import get_store
-from app.api.routes.stream import _references_used_in_reply
+from app.api.routes.stream import (
+    _agent_role_for_message,
+    _references_used_in_reply,
+    _starter_reply_for_message,
+    _stream_llm_reply,
+)
 from app.services.ruomu import RuomuEvidence
 
 EVENTS_URL = "/api/events"
@@ -49,6 +56,42 @@ def test_ruomu_only_runs_for_evidence_intent_without_sensitive_payload():
     assert _should_use_ruomu("我今天有一点头晕") is False
     assert _should_use_ruomu("请查最新资料，手机号13800138000") is False
     assert _should_use_ruomu("附件：检查报告全文") is False
+
+
+def test_only_curated_starter_prompts_use_fast_assistant_route():
+    assert _agent_role_for_message("我点击了“核对今天的用药”。请先引导我") == "assistant"
+    assert _agent_role_for_message("我今天吃药后头晕，应该怎么办？") == "family_doctor"
+    starter = _starter_reply_for_message("我点击了“核对今天的用药”。请先引导我")
+    assert starter is not None
+    assert "不改处方" in starter
+    assert _starter_reply_for_message("我今天吃药后头晕，应该怎么办？") is None
+
+
+@pytest.mark.asyncio
+async def test_llm_stream_publishes_first_chunk_before_completion():
+    """首块必须边生成边交给 SSE，不能等完整回答结束后才统一下发。"""
+
+    class SlowRuntime:
+        async def stream(self, **_kwargs):
+            yield SimpleNamespace(content="第一段")
+            await asyncio.sleep(0.05)
+            yield SimpleNamespace(content="第二段")
+
+    published: list[str] = []
+
+    async def capture(chunk: str) -> None:
+        published.append(chunk)
+
+    task = asyncio.create_task(
+        _stream_llm_reply(SlowRuntime(), [{"role": "user", "content": "你好"}], capture)
+    )
+    await asyncio.sleep(0.01)
+    assert published == ["第一段"]
+    assert not task.done()
+
+    chunks, metadata = await task
+    assert chunks == ["第一段", "第二段"]
+    assert metadata is None
 
 
 def _event_stream_url(event_id: str) -> str:
